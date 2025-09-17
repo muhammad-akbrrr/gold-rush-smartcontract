@@ -324,22 +324,41 @@ stateDiagram-v2
 
 ## Account Designs
 ### Config
-- `admin`: The administrator of the contract.
-- `token`: The Gold Rush Token (GRT) used for betting.
-- `fee_gold_price`: The fee percentage charged on bets based on Gold Price.
-- `fee_stock_price`: The fee percentage charged on bets based on stock price.
-- `min_bet`: The minimum bet amount.
-- `round_duration`: The duration of each betting round.
-- `paused`: A boolean to pause all operations in the contract.
-- `emergency_paused`: A boolean to pause emergency deposit and place bet.
-- `current_round`: The current betting round number.
-- `settlement_authority`: The authority responsible for settling rounds.
-- `version`: The version of the contract.
-- `oracle`: The Chainlink oracle address for fetching price data.
-- `job_id`: The job ID for the Chainlink oracle.
-- `oracle_whitelist`: A list of whitelisted oracle addresses.
-- `treasury`: The address where the fees are sent.
-- `bump`: A bump seed for PDA.
+```rust
+pub struct Config {
+  // --- Authorities ---
+  pub admin: Pubkey,                   // The administrator of the contract.
+  pub settlement_authority: Pubkey,    // The authority responsible for settling rounds.
+  pub keeper_authorities: Vec<Pubkey>, // The authority for keeper/oracle accounts allowed to keeper operations.
+
+  // --- Token & Treasury ---
+  pub token_mint: Pubkey,              // The Gold Rush Token (GRT) used for betting.
+  pub treasury: Pubkey,                // The address where the fees are sent.
+
+  // --- Fee Config ---
+  pub fee_gold_price_bps: u16,         // The fee percentage charged on bets based on Gold Price.
+  pub fee_stock_price_bps: u16,        // The fee percentage charged on bets based on stock price.
+
+  // --- Betting Rules ---
+  pub min_bet_amount: u64,             // The minimum bet amount.
+
+  // --- Global State ---
+  pub status: ContractStatus,          // Overall contract status (Active / Paused / EmergencyPaused)
+  pub current_round_counter: u64,      // Incremental counter for new round IDs
+
+  // --- Metadata ---
+  pub version: u8,                     // The version of the contract.
+  pub bump: u8,                        // A bump seed for PDA.
+}
+
+// Enum for program status flags
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
+pub enum ContractStatus {
+    Active,
+    Paused,
+    EmergencyPaused,
+}
+```
 
 ### Round
 - `round`: The round number.
@@ -361,6 +380,12 @@ stateDiagram-v2
 - `claimable_amount`: The amount that can be claimed as a reward.
 - `claimed`: A boolean indicating if the reward has been claimed.
 - `bump`: A bump seed for PDA.
+
+```rust
+pub struct Round {
+
+}
+```
 
 ### Vault
 - `mint`: The mint address of the Gold Rush Token (GRT).
