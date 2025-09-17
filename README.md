@@ -383,15 +383,35 @@ pub enum ContractStatus {
 
 ```rust
 pub struct Round {
+  // --- Identity ---
+  pub id: u64,                   // Unique identifier for the round (incremental from config.current_round_counter).
+  pub asset: Pubkey,             // The asset being bet on (e.g., Gold, Stock).
+  pub start_time: i64,           // The timestampt when round is scheduled to start.
+  pub end_time: i64,             // The timestamp when round is scheduled to end.
+  pub vault: Pubkey,             // The vault account holding the bets for this round.
 
+  // --- State ---
+  pub status: RoundStatus,       // The current status of the round (Planned, Active, PendingSettlement, Ended).
+  pub locked_price: Option<u64>, // The price when round becomes Active.
+  pub final_price: Option<u64>,  // The price when round is settled.
+  pub total_pool: u64,           // The total amount of GRT bet in this round.
+  pub total_bets: u64,           // The total number of bets placed in this round.
+
+  // --- Metadata ---
+  pub created_at: i64,           // The timestamp when the round was created.
+  pub settled_at: Option<i64>,   // The timestamp when the round was settled.
+  pub bump: u8,                  // A bump seed for PDA.
+}
+
+// Enum for round status
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
+pub enum RoundStatus {
+    Planned,                    // Created but not started yet
+    Active,                     // Currently accepting bets
+    PendingSettlement,          // Ended but settlement failed, needs retry
+    Ended,                      // Successfully settled
 }
 ```
-
-### Vault
-- `mint`: The mint address of the Gold Rush Token (GRT).
-- `total_staked`: The total amount of GRT staked in the vault.
-- `round`: The round number associated with the vault.
-- `bump`: A bump seed for PDA.
 
 ### PriceFeed
 - `price`: The current price fetched from the oracle.
