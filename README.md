@@ -1,6 +1,7 @@
 # Gold Rush Smart Contract
 
 A betting smart contract for a game called "Gold Rush". Users can bets based on Gold Price movements or the company's stock price and win rewards based on the outcome. Users can place bets using Gold Rush Token (GRT). Multiple bet types are supported, including betting going Up/Down and percentage changes.
+
 ## Features
 - *Betting*: Players can place bets on the price movement of Gold or a specific stock with Gold Rush Token (GRT).
 - *Price Feeds*: Integrates with Chainlink oracles to fetch real-time price data.
@@ -9,6 +10,153 @@ A betting smart contract for a game called "Gold Rush". Users can bets based on 
 - *Rounds*: The game operates in weekly rounds.
 - *Claim Rewards*: Players can claim their rewards after the round ends. The rewards are calculated based on the total pool, individual bets, and bet types. The percentage change bets have more larger rewards.
 - *Emergency Withdraw*: Players can withdraw their bets in case of emergencies.
+
+## Flows
+### Normal
+```mermaid
+flowchart TD
+    A[Admin: Create Round] --> B[Users: Place Bets]
+    B -->|Betting Period Ends| C[Backend: Trigger Settlement]
+    C --> D[Contract: Calculate Outcomes & Rewards]
+    D --> E[Users: Claim Rewards]
+    E --> F[Bet Status: Mark as Claimed]
+```
+
+### Admin (High-level)
+```mermaid
+flowchart TD
+    A[Start] --> B{Config Initialized?}
+    B -- No --> C[Initialize Config]
+    B -- Yes --> D{Paused?}
+    D -- Yes --> E[Unpause Program]
+    D -- No --> F[Create New Round for Scheduled/Future]
+    F --> G{Round Started?}
+    G -- No --> H[Wait Until Start Time]
+    G -- Yes --> I[Users Place Bets]
+    I --> J{Cutoff Reached?}
+    J -- No --> O[Wait Until Cutoff Reached]
+    J -- Yes --> K[Settle Round]
+    K --> L[Users Claim Rewards]
+    L --> M[Prepare Next Round]
+    M --> F
+
+    %% Optional cancel branch
+    I --> X[Cancel Round]
+    X --> Y[Refund All Bets]
+    Y --> M
+```
+
+### Admin Lifecycle (Low-level)
+```mermaid
+stateDiagram-v2
+    [*] --> NoConfig
+
+    NoConfig --> Configured: Initialize Config<br/>initialize_config()
+    Configured --> Configured: Update Config<br/>update_config()
+
+    Configured --> Paused: Pause<br/>pause()
+    Paused --> Configured: Unpause<br/>unpause()
+
+    Configured --> EmergencyPaused: Emergency Pause<br/>emergency_pause()
+    EmergencyPaused --> Configured: Emergency Unpause<br/>emergency_unpause()
+
+    Configured --> Configured: Add Oracle<br/>add_oracle_to_whitelist()
+    Configured --> Configured: Remove Oracle<br/>remove_oracle_from_whitelist()
+    Configured --> Configured: Set Oracle<br/>set_oracle()
+
+    Configured --> RoundScheduled: Create Scheduled Round<br/>create_round(start_time)
+    RoundScheduled --> RoundActive: Start Round (when start_time)<br/>auto_activate()
+    RoundActive --> Configured: Settle Round<br/>settle_round()
+    RoundScheduled --> Configured: Cancel Round<br/>cancel_round() 
+    RoundActive --> Configured: Cancel Round<br/>cancel_round()
+
+    Configured --> Configured: Upgrade Admin<br/>upgrade_admin()
+
+    note right of NoConfig
+        Belum ada konfigurasi
+        Tidak ada operasi lain yang aktif
+    end note
+
+    note right of Configured
+        Semua operasi admin aktif
+        Bisa buat round, kelola oracle, dll.
+    end note
+
+    note right of Paused
+        Semua operasi dibekukan sementara
+        Bisa dilanjutkan dengan unpause()
+    end note
+
+    note right of EmergencyPaused
+        Hanya operasi darurat yang aktif
+        Digunakan saat ada kondisi kritis
+    end note
+
+    note right of RoundScheduled
+        Round sudah dibuat tapi belum mulai
+        User belum bisa bet
+    end note
+
+    note right of RoundActive
+        Round sedang berjalan
+        User bisa bet sampai cutoff
+    end note
+```
+
+### User (High-level)
+```mermaid
+graph TD
+    A[Select Active Round] --> B[Place Bet]
+    B --> C{Before Cutoff?}
+    C -->|No| D[Round Cloed]
+    C -->|Yes| E[Wait for Settlement]
+    E --> F{Bet Result}
+    F -->|Win| G[Claim Reward]
+    F -->|Lose| H[No Action Needed]
+```
+
+### User (Low-level)
+```mermaid
+stateDiagram-v2
+    [*] --> Browsing: User opens app
+
+    Browsing --> Betting: Place Bet<br/>place_bet()
+    Betting --> Active: Bet Stored
+
+    Active --> Active: Cancel Bet<br/>withdraw_bet()
+    Active --> Locked: Round Cutoff<br/>cutoff_reached()
+    
+    Locked --> Settled: Round Settled<br/>settle_round()
+    Settled --> Claimed: Claim Rewards<br/>claim_rewards()
+
+    Claimed --> [*]: User got rewards
+
+    note right of Browsing
+        User can view the list of active rounds and select the round you want to participate in.
+    end note
+
+    note right of Betting
+        User selects the bet type (Gold Price / Stock Price) and the number of tokens.
+    end note
+
+    note right of Active
+        The bet has been saved. Users can cancel before the cutoff.
+    end note
+
+    note right of Locked
+        Cannot cancel bet. Waiting for settlement results
+    end note
+
+    note right of Settled
+        The bet result is determined. Prizes are available if user win.
+    end note
+
+    note right of Claimed
+        User successfully claimed prize Bet completed
+    end note
+
+```
+
 
 ## Account Designs
 ### Config
