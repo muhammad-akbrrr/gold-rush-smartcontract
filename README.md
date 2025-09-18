@@ -63,6 +63,7 @@ sequenceDiagram
     participant Keeper
     participant Oracle
     participant Program
+    participant Treasury
 
     %% Round creation
     Admin->>Program: create_round(round_id, asset, start_time, end_time, ...)
@@ -70,17 +71,31 @@ sequenceDiagram
 
     %% User actions (place / withdraw)
     User->>Program: place_bet(round_id, bet_type, amount)
-    alt now < round.end_time
-      Program-->>User: accept_bet(tx confirmed)
-    else
-      Program-->>User: reject_bet("cutoff reached")
+    alt Before round end_time
+      Program-->>Program: save bet + lock amount in vault
+      Program-->>User: accept_bet (tx confirmed)
+    else After round end_time
+      Program-->>User: reject_bet ("cutoff reached")
     end
 
     User->>Program: withdraw_bet(round_id, bet_id)
-    alt now < round.end_time
+    alt Before round end_time
       Program-->>User: refund_confirmed
-    else
-      Program-->>User: reject_withdraw("cutoff reached")
+    else After round end_time
+      Program-->>User: reject_withdraw ("cutoff reached")
+    end
+
+    %% Admin: cancel round (hard cancel)
+    Admin->>Program: cancel_round(round_id)
+    alt round.status in {Planned, Active, PendingSettlement}
+      Program-->>Program: for each bet -> refund bet.amount from vault
+      Program-->>Treasury: process refunds
+      Treasury-->>User: return stake
+      Program-->>Program: close all Bet accounts
+      Program-->>Program: close Round account
+      Program-->>Admin: ack (round cancelled & cleaned up)
+    else round.status == Ended
+      Program-->>Admin: reject_cancel ("round already settled")
     end
 
     %% Keeper: activate scheduled rounds
@@ -94,21 +109,24 @@ sequenceDiagram
     loop every N minutes
       Keeper->>Program: fetch_rounds(status in {Active, PendingSettlement})
       Keeper->>Program: is_due_for_settlement(round_id)?
-      alt not due
+      alt Not due
         Program-->>Keeper: skip
-      else due
+      else Due for settlement
         %% Keeper obtains price from Oracle (off-chain)
         loop Retry up to 3 times
           Keeper->>Oracle: get_price(asset)
           Oracle-->>Keeper: price or error
         end
 
-        alt received price
+        alt Price received
           Keeper->>Program: settle_round(round_id, final_price)
           Program-->>Program: set bet.status = Won/Lost
           Program-->>Program: sum winners_weight → round.winners_weight
+          Program-->>Program: calculate fee = total_pool * fee_bps / 10000
+          Program-->>Program: update total_fee_collected and total_reward_pool
+          Program-->>Treasury: transfer fee from vault
           Program-->>Keeper: ack (round.status = Ended)
-        else all failed
+        else Oracle failed
           Keeper->>Program: set_pending_settlement(round_id, reason="oracle_fail")
           Program-->>Keeper: ack (round.status = PendingSettlement)
         end
@@ -117,12 +135,11 @@ sequenceDiagram
 
     %% After settlement, user claims reward
     User->>Program: claim_reward(round_id, bet_id)
-    alt bet.status == Won and not bet.claimed
-      Program-->>Program: reward = bet.weight / round.winners_weight * round.total_pool
-      Program-->>Program: transfer_reward_from_vault(user, reward)
-      Program-->>User: reward_transferred
+    alt Bet is Won and not claimed
+      Program-->>Program: reward = bet.weight / winners_weight * total_reward_pool
+      Program-->>User: transfer reward from vault
       Program-->>Program: mark bet.claimed = true
-    else
+    else Bet not eligible
       Program-->>User: reject_claim
     end
 
@@ -133,23 +150,31 @@ sequenceDiagram
 flowchart TD
     A[Start] --> B{Config Initialized?}
     B -- No --> C[Initialize Config]
-    B -- Yes --> D{Paused?}
+    B -- Yes --> D{Program Paused?}
+    
     D -- Yes --> E[Unpause Program]
-    D -- No --> F[Create New Round for Scheduled/Future]
-    F --> G{Round Started?}
+    D -- No --> F[Create and Schedule New Round]
+    
+    F --> G{Round Start Time Reached?}
     G -- No --> H[Wait Until Start Time]
-    G -- Yes --> I[Users Place Bets]
-    I --> J{Cutoff Reached?}
-    J -- No --> O[Wait Until Cutoff Reached]
-    J -- Yes --> K[Settle Round: update bet status + sum winners_weight]
-    K --> L[Users Claim Rewards: calculate reward based on weight]
-    L --> M[Prepare Next Round]
+    G -- Yes --> I[Users Place Bets - Auto]
+    
+    I --> J{Cutoff Time Reached?}
+    J -- No --> O[Wait Until Cutoff Time]
+    J -- Yes --> K[Settle Round: 
+        - Lock betting 
+        - Update bet statuses 
+        - Calculate total winners_weight]
+    
+    K --> L[Enable Claim Rewards - Auto by Users]
+    L --> M[Admin Prepares Next Round]
     M --> F
 
     %% Optional cancel branch
-    I --> X[Cancel Round]
+    I --> X[Cancel Round - Admin Action]
     X --> Y[Refund All Bets]
     Y --> M
+
 ```
 
 ### Admin (Low-level)
@@ -160,142 +185,48 @@ stateDiagram-v2
     NoConfig --> Configured: Initialize Config<br/>initialize_config()
     Configured --> Configured: Update Config<br/>update_config()
 
-    Configured --> Paused: Pause<br/>pause()
-    Paused --> Configured: Unpause<br/>unpause()
+    Configured --> Paused: Pause Program<br/>pause()
+    Paused --> Configured: Unpause Program<br/>unpause()
 
     Configured --> EmergencyPaused: Emergency Pause<br/>emergency_pause()
     EmergencyPaused --> Configured: Emergency Unpause<br/>emergency_unpause()
 
-    Configured --> Configured: Add Oracle<br/>add_oracle_to_whitelist()
-    Configured --> Configured: Remove Oracle<br/>remove_oracle_from_whitelist()
-    Configured --> Configured: Set Oracle<br/>set_oracle()
+    Configured --> Configured: Manage Oracles<br/>add/remove/set_oracle()
 
-    Configured --> RoundScheduled: Create Scheduled Round<br/>create_round(start_time, end_time)
-    RoundScheduled --> RoundActive: Start Round (when start_time)<br/>auto_activate()
-    RoundActive --> Configured: Settle Round<br/>settle_round()  
-        note right of RoundActive
-            Settle Round marks bets as Won/Lost
-            Sums winners_weight in Round
-            Reward calculation deferred to user claim
-        end note
-
-    RoundScheduled --> Configured: Cancel Round<br/>cancel_round() 
+    Configured --> RoundScheduled: Create Round<br/>create_round()
+    RoundScheduled --> Configured: Cancel Round<br/>cancel_round()
+    RoundScheduled --> RoundActive: Auto Activate at start_time
     RoundActive --> Configured: Cancel Round<br/>cancel_round()
 
     Configured --> Configured: Upgrade Admin<br/>upgrade_admin()
 
-    note right of NoConfig
-        No configurations yet. No other operations are active
-    end note
-
     note right of Configured
-        All admin operations are active. Admin can create rounds, manage oracles, etc.
+        Admin only manages configuration and round lifecycle.
     end note
-
-    note right of Paused
-        All operations are temporarily frozen. Can be resumed with unpause()
-    end note
-
-    note right of EmergencyPaused
-        Only settlement and claim are allowed. New bets are blocked
-    end note
-
-    note right of RoundScheduled
-        The round has been created but has not started. Users cannot bet yet.
-    end note
-
-    note right of RoundActive
-        The round is in progress. Users can bet until the cutoff.
-    end note
-```
-
-### User (High-level)
-```mermaid
-graph TD
-    A[Select Active Round] --> B[Place Bet]
-    B --> C{Before End Time?}
-    C -->|No| D[Round Closed - cannot bet]
-    C -->|Yes| E[Wait for Round End]
-    E --> F{Round Settled?}
-    F -->|Yes| G{Bet Result}
-    G -->|Win| H[Claim Reward - calculate reward using weight]
-    G -->|Lose| I[No Action Needed]
-    F -->|No| J[Wait for Settlement]
-
-```
-
-### User (Low-level)
-```mermaid
-stateDiagram-v2
-    [*] --> Browsing: User opens app
-
-    Browsing --> Betting: Place Bet<br/>place_bet()
-    Browsing --> Waiting: Round not started yet
-    Waiting --> Betting: Start time reached
-    Betting --> Active: Bet Stored
-
-    Active --> Active: Cancel Bet<br/>withdraw_bet() before end_time
-    Active --> Locked: Round End<br/>end_time_reached()
-
-    Locked --> Settled: Round Status = Ended<br/>settle_round() sets Won/Lost and winners_weight
-    Settled --> Claiming: User claims reward<br/>claim_reward()
-    Claiming --> Claimed: Transfer reward based on bet weight
-
-    Claimed --> [*]: User got reward
-
-    note right of Browsing
-        User can view active rounds and select the round to participate.
-    end note
-
-    note right of Betting
-        User selects bet type (Gold Price / Stock Price) and amount.
-    end note
-
-    note right of Active
-        Bet is stored. User can cancel before end_time (cutoff).
-    end note
-
-    note right of Locked
-        Cannot cancel bet. Waiting for round settlement.
-    end note
-
-    note right of Settled
-        Bet status determined (Won/Lost). Reward amount not yet claimed.
-    end note
-
-    note right of Claiming
-        Reward is calculated using bet weight / winners_weight * total_pool.
-    end note
-
-    note right of Claimed
-        User successfully claimed reward. Bet completed.
-    end note
-
 ```
 
 ### Keeper (High-level)
 ```mermaid
 flowchart TD
-    A[Start] --> B[Fetch All Scheduled Rounds]
+    A[Start] --> B[Fetch Scheduled Rounds]
     B --> C{Now >= start_time?}
     C -- No --> B1[Wait 5 min] --> B
     C -- Yes --> D[Set Round as Active]
 
-    %% Settlement path
-    A --> E[Fetch All Active or PendingSettlement Rounds]
+    %% Loop settlement check
+    A --> E[Fetch Active or PendingSettlement Rounds]
     E --> F{Now >= end_time?}
     F -- No --> E1[Wait 5 min] --> E
-    F -- Yes --> G[Get Current Price from Oracle]
+    F -- Yes --> G[Get Final Price from Oracle]
 
-    G --> H{Success?}
-    H -- No --> I[Retry, max 3]
-    I -->|Failed| J[Set Status PendingSettlement] --> E
-    H -- YES --> K[Continue Settlement]
+    G --> H{Price Fetched?}
+    H -- No --> I[Mark as PendingSettlement - Retry next loop] --> E
+    H -- Yes --> J[Run Settlement:
+        - Determine winners & losers
+        - Calculate winners_weight
+        - Mark bets as Won/Lost]
 
-    K --> L[Determine Winners & Losers]
-    L --> M[Update winners_weight in Round]
-    M --> N[Mark Bets as Won/Lost]
-    N --> O[Set Round Status Ended]
+    J --> K[Mark Round as Ended]
 ```
 
 ### Keeper (Low-level)
@@ -306,15 +237,15 @@ stateDiagram-v2
     Scheduled --> Active: Trigger Start<br/>now >= start_time
     Active --> Active: Keep Checking<br/>before end_time
 
-    Active --> PendingSettlement: Trigger Settlement<br/>get_price() failed after retries
+    Active --> PendingSettlement: Trigger Settlement<br/>get_price() failed
     Active --> Settling: Trigger Settlement<br/>get_price() success
 
     PendingSettlement --> Settling: Retry Settlement<br/>get_price() success
 
-    Settling --> Ended: Settlement Success<br/>set_bets_won_lost() + update winners_weight in Round
+    Settling --> Ended: Settlement Success<br/>set_bets_won_lost() + update winners_weight
 
     note right of Scheduled
-        The round was created by an admin with a start_time in the future. Unable to accept bets yet. The keeper continues to check periodically.
+        The round is created by the Admin and cannot yet accept bets. The Keeper only monitors the round until the start time.
     end note
 
     note right of Active
@@ -322,19 +253,86 @@ stateDiagram-v2
     end note
 
     note right of PendingSettlement
-       Settlement failed due to oracle error. Keeper retries in next loop. Users cannot bet.
+        Settlement failed due to oracle error.
+        Keeper will retry in the next loop.
     end note
 
     note right of Settling
-        The Keeper executes settlement:
-        - Obtain price
-        - Determine winners/losers
-        - Update winners_weight
+        The Keeper performs settlement:
+        - Take the final price
+        - Calculate winners/losers
+        - Calculate winners_weight
         - Mark bets as Won/Lost
     end note
 
     note right of Ended
-        Round is ended. Users cannot bet or withdraw. They can claim rewards based on weight.
+        Round has ended.
+        Users can claim rewards based on weight.
+    end note
+```
+
+### User (High-level)
+```mermaid
+flowchart TD
+    A[Browse Active Round] --> B[Place Bet]
+    B --> C{Now < end_time?}
+    C -- No --> D[Cannot Bet - Round Closed]
+    C -- Yes --> E[Bet Stored in Round Vault]
+
+    E --> F{Round Ended?}
+    F -- No --> G[Wait for Settlement]
+    F -- Yes --> H{Bet Won or Lost?}
+
+    H -- Lost --> I[No Action]
+    H -- Won --> J[Claim Reward - based on weight]
+    J --> K[Receive Reward to Wallet]
+
+```
+
+### User (Low-level)
+```mermaid
+stateDiagram-v2
+    [*] --> Browsing
+
+    Browsing --> Betting: place_bet() on Active Round
+    Betting --> Active: Bet Stored<br/>before end_time
+
+    Active --> Active: cancel_bet() allowed<br/>before end_time
+    Active --> Locked: end_time reached
+
+    Locked --> Settled: Round settled<br/>set Won/Lost + winners_weight
+    Settled --> Claiming: claim_reward() if Won
+    Claiming --> Claimed: Transfer reward
+
+    Claimed --> [*]: Bet Completed
+
+    note right of Browsing
+        Users view a list of active rounds and select a round to place a bet on.
+    end note
+
+    note right of Betting
+        Users select the amount and direction of the bet.
+    end note
+
+    note right of Active
+        Bets are stored in the round vault. They can still be canceled before end_time.
+    end note
+
+    note right of Locked
+        Bet locked. Waiting for Keeper settlement.
+    end note
+
+    note right of Settled
+        The bet status is determined (Won/Lost). Rewards are not automatically sent.
+    end note
+
+    note right of Claiming
+        Users call claim_reward()
+        Reward = (user_weight / winners_weight) * total_pool
+    end note
+
+    note right of Claimed
+        Reward has been received in the user's wallet.
     end note
 ```
 
@@ -520,19 +518,18 @@ Total reward pool: \( 10 + 20 - 0.25 = 29.75 \) GRT
 
 ## Reward Calculation
 
-This section explains the reward calculation logic used in the Gold Rush betting system.  
-The system uses a **weight-based model** combined with a **self-claim mechanism** to optimize on-chain operations, especially when there are thousands of bets per round.
+The Gold Rush betting system uses a **weight-based model** combined with a **self-claim mechanism** to efficiently distribute rewards after each round ends.
 
 ### Concept
 
-Each bet has a **weight** that represents its contribution to the total reward pool.  
-The weight is influenced by:
+Each bet has a **weight** that represents its contribution to the reward pool.
+Weight depends on:
 
-1. **Bet Amount**: Larger bets contribute more.
-2. **Bet Type Factor**: Bets on `PercentageChange` may carry a higher factor than simple `Up/Down` bets.
-3. **Time Factor**: Bets placed earlier in the round may carry a higher weight than bets placed near the end of the round.
+1. **Bet Amount** — Larger bets contribute more.
+2. **Bet Type Factor** — Bets on `PercentageChange` may carry a higher factor than simple `Up/Down` bets.
+3. **Time Factor** — Bets placed earlier in the round may carry a higher weight than bets placed near the end of the round.
 
-The general formula for a bet's weight:
+**General formula for a bet's weight:**
 
 $$
 \text{weight} = \text{amount} \times \text{side\_factor} \times \text{time\_factor}
@@ -540,34 +537,37 @@ $$
 
 Where:
 
-- `amount` = number of GRT tokens bet
+- `amount` = number of GRT tokens bet (before fees)
 - `side_factor` = multiplier based on `BetSide`
   - Up/Down: `1.0`
   - PercentageChange: `>1.0` depending on the magnitude of percentage
 - `time_factor` = multiplier based on how early the bet was placed (range: $0 < \text{time\_factor} \le 1.0$)
 
----
+### Settlement Process
 
-### Settlement
-
-During settlement:
+When the round ends, the **keeper** settles it:
 
 1. The **Keeper** determines the winning bets by comparing `locked_price` and `final_price`.
-2. For all winning bets:
-   - Mark `Bet.status = Won`
-   - Sum their weights into `round.winners_weight`:
+2. Mark all winning bets as `Won` and sum their weights:
 
 $$
 \text{round.winners\_weight} = \sum_{\text{all winning bets}} \text{bet.weight}
 $$
 
-3. For losing bets:
-   - Mark `Bet.status = Lost`
-   - Weight is ignored for reward calculation.
+3. Mark all losing bets as `Lost`.
+4. Calculate and transfer fees:
 
-> **Note:** No reward amount is calculated yet. Only weights are updated. This avoids looping all bets during settlement, optimizing on-chain efficiency.
+$$
+\text{total\_fee\_collected} = \sum_{i=1}^{n} \text{amount}_i \times \frac{\text{fee\_bps}}{10000}
+$$
 
----
+5. Move `total_fee_collected` from round vault to `treasury`.
+6. Update `round.total_reward_pool`:
+$$
+\text{round.total\_reward\_pool} = \text{round.total\_pool} - \text{round.total\_fee\_collected}
+$$
+
+> **Note:** At this stage, **no rewards are sent to users yet** — only marking bet results and collecting fees.
 
 ### Self-Claim by User
 
@@ -577,44 +577,48 @@ When a user claims their reward:
 2. Calculate the claimable reward:
 
 $$
-\text{reward} = \frac{\text{bet.weight}}{\text{round.winners\_weight}} \times \text{round.total\_pool}
+\text{reward} = \frac{\text{bet.weight}}{\text{round.winners\_weight}} \times \text{round.total\_reward\_pool}
 $$
 
 3. Transfer the reward from the round vault to the user's account.
 4. Mark `Bet.claimed = true`.
 
-> This approach ensures:
-> - **No heavy loops** during settlement
-> - Reward is calculated **on-demand**
-> - Users can **preview rewards** before claiming if needed (optional off-chain)
+---
+
+### Important Notes
+
+- `round.total_reward_pool` is equal to `round.total_pool - round.total_fee_collected`.
+- The reward includes the user's original stake. Losing users lose their stake, and their funds contribute to the reward pool for winners.
+- If **all users win**, no one loses their stake. All winners simply receive their original stake back minus proportional fees.
 
 ---
 
 ### Example Calculation
 
-| User | Amount (GRT) | Bet Type | Time Factor | Weight |
-|------|--------------|----------|------------|--------|
-| A    | 10           | Up       | 1.0        | 10     |
-| B    | 10           | Percentage | 1.2      | 12     |
+| User | Amount (GRT) | Bet Type | Fee (bps)   | Time Factor | Weight |
+|------|--------------|----------|-------------|-------------|--------|
+| A    | 10           | Gold     | 50          |    1.0      | 10     |
+| B    | 20           | Stock    | 100         |    1.0      | 20     |
 
-- Total weight of winners: \( 10 + 12 = 22 \)  
-- Total pool: 20 GRT  
+- Total pool: $10 + 20 = 30$
+- Fees:
+  - A → $10 \times 0.005 = 0.05$ GRT
+  - B → $20 \times 0.01 = 0.2$ GRT
+- Total fee collected = $0.05 + 0.2 = 0.25$ GRT
+- Total reward pool = $30 - 0.25 = 29.75$ GRT
+- Suppose both A and B win:
+  - `round.winners_weight = 10 + 20 = 30`
+
+Then:
 
 $$
-\text{Reward A} = \frac{10}{22} \times 20 \approx 9.09\text{ GRT}
+\text{Reward A} = \frac{10}{30} \times 29.75 \approx 9.92\text{ GRT}
 $$
 $$
-\text{Reward B} = \frac{12}{22} \times 20 \approx 10.91\text{ GRT}
+\text{Reward B} = \frac{20}{30} \times 29.75 \approx 19.83\text{ GRT}
 $$
 
----
-
-### Summary
-
-- Settlement **only sets status** (Won/Lost) and updates `winners_weight`.
-- Reward calculation is deferred to **self-claim**, ensuring efficiency.
-- Weight incorporates **amount**, **bet type**, and **time factor**.
-- The model is flexible and can be adjusted for new bet types or reward rules.
+Total = 29.75 GRT distributed, and 0.25 GRT sent to the treasury.
 
 ---
 
