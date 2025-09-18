@@ -625,16 +625,222 @@ Total = 29.75 GRT distributed, and 0.25 GRT sent to the treasury.
 
 ## Program Instructions
 ### Initialize
-Initializes the Gold Rush smart contract with the necessary configurations.
+#### Purpose
+Initializes the program for the first time. Creates a `Config` account that stores global settings such as admin, treasury, and other initial parameters.
+
+#### Context
+| Field            | Type                  | Description                               |
+|------------------|-----------------------|--------------------------------------------|
+| `initializer`    | `Signer`              | The account that initializes the program (becomes admin if `admin` not provided). |
+| `config`         | `Account<Config>`     | PDA account to store global configuration data.         |
+| `system_program` | `Program<System>`     | The system program used to create the `config` account.   |
+
+#### Arguments
+| Name            | Type      | Description                          |
+|----------------|------------|-------------------------------------|
+| `settlement_authority` | `Pubkey`   | The initial address of the admin account |
+| `keeper_authorities`   | `Vec<Pubkey>` | List of authorized keeper authority account addresses
+| `token_mint`   | `Pubkey`   | The address of the GRT token mint                 |
+| `treasury`      | `Pubkey`   | The address of the treasury account                 |
+| `fee_gold_price_bps`       | `u16`      | The fee for gold price bets in basis points (bps) |
+| `fee_stock_price_bps`      | `u16`      | The fee for stock price bets in basis points (bps) |
+| `min_bet_amount` | `u64`      | The minimum amount required to place a bet    |
+
+#### Validations
+- Ensure `config` has not been initialized (no previous data exists)
+- `fee_gold_price_bps` and `fee_stock_price_bps` must be `< 10_000` (100%)
+- `initializer` must be a signer
+- `keeper_authorities` must not be empty
+- `min_bet_amount` must be greater than `0`
+
+#### Logic
+1. Derive PDA for `config` using seeds `["config"]`
+2. Create the `config` account
+3. Initialize fields:
+   - `admin = admin.unwrap_or(initializer.key())`
+   - `settlement_authority = settlement_authority`
+   - `keeper_authorities = keeper_authorities`
+   - `token_mint = token_mint`
+   - `treasury = treasury`
+   - `fee_gold_price_bps = fee_gold_price_bps`
+   - `fee_stock_price_bps = fee_stock_price_bps`
+   - `min_bet_amount = min_bet_amount`
+4. Set default fields:
+   - `status = Active`
+   - `current_round_counter = 0`
+   - `version = 1`
+   - `bump = bump`
+
+#### Emits / Side Effects
+- Creates a new `Config` account at PDA `["config"]`
+- Stores global configuration and admin data
+
+#### Errors
+| Code                   | Meaning                                    |
+|---------------------------|--------------------------------------------|
+| `AlreadyInitialized`        | If `config` has already been created |
+| `InvalidFee`                 | If any `fee_*_bps >= 10000`           |
+| `InvalidMinBetAmount`        | If `min_bet_amount == 0`               |
+| `NoKeeperAuthorities`        | If `keeper_authorities` is empty       |
+
+---
 
 ### Admin: Update Config
-Updates the configuration settings of the contract. Only the admin can perform this action.
 
-### Admin: Pause
-Pauses all operations in the contract. Only the admin can perform this action.
+#### Purpose
+Allows the admin to update global configuration settings stored in the `Config` account, such as fee parameters, keeper authorities, treasury address, and minimum bet amount.
 
-### Admin: Unpause
-Unpauses all operations in the contract. Only the admin can perform this action.
+---
+
+#### Context
+| Field             | Type                  | Description                                      |
+|--------------------|-----------------------|---------------------------------------------------|
+| `admin`              | `Signer`               | The current admin authorized to update the config. |
+| `config`             | `Account<Config>`      | The existing global configuration account.         |
+
+---
+
+#### Arguments
+| Name                     | Type             | Description                                        |
+|----------------------------|-------------------|-------------------------------------------------------|
+| `new_admin`                | `Option<Pubkey>`    | (Optional) New admin address to replace the current admin. |
+| `settlement_authority`     | `Option<Pubkey>`    | (Optional) New settlement authority address. |
+| `keeper_authorities`       | `Option<Vec<Pubkey>>` | (Optional) New list of keeper authority addresses. |
+| `token_mint`                | `Option<Pubkey>`    | (Optional) New token mint address. |
+| `treasury`                  | `Option<Pubkey>`    | (Optional) New treasury account address. |
+| `fee_gold_price_bps`        | `Option<u16>`         | (Optional) New fee for gold price bets (bps). |
+| `fee_stock_price_bps`       | `Option<u16>`         | (Optional) New fee for stock price bets (bps). |
+| `min_bet_amount`             | `Option<u64>`         | (Optional) New minimum bet amount. |
+
+---
+
+#### Validations
+- `admin` must be the current admin stored in `config.admin`
+- `fee_gold_price_bps` and `fee_stock_price_bps` (if provided) must be `< 10_000` (100%)
+- `keeper_authorities` (if provided) must not be empty
+- `min_bet_amount` (if provided) must be `> 0`
+
+---
+
+#### Logic
+1. Check that `admin.key() == config.admin`
+2. For each provided argument (`Option<T>`), if `Some(value)` then update the corresponding field in `config`:
+   - `admin = new_admin`
+   - `settlement_authority = settlement_authority`
+   - `keeper_authorities = keeper_authorities`
+   - `token_mint = token_mint`
+   - `treasury = treasury`
+   - `fee_gold_price_bps = fee_gold_price_bps`
+   - `fee_stock_price_bps = fee_stock_price_bps`
+   - `min_bet_amount = min_bet_amount`
+
+---
+
+#### Emits / Side Effects
+- Updates the `Config` account with new global settings
+
+---
+
+#### Errors
+| Code                      | Meaning                                      |
+|-------------------------------|----------------------------------------------|
+| `Unauthorized`                  | If the caller is not the current `config.admin` |
+| `InvalidFee`                     | If any provided `fee_*_bps >= 10000` |
+| `InvalidMinBetAmount`            | If provided `min_bet_amount == 0` |
+| `NoKeeperAuthorities`            | If provided `keeper_authorities` is empty |
+
+
+### Admin: Pause Program
+
+#### Purpose
+Allows the admin to **pause** the entire program by updating the `Config.status` field.  
+When paused, new rounds cannot be created and bets cannot be placed.
+
+---
+
+#### Context
+| Field       | Type                | Description                                       |
+|-------------|---------------------|---------------------------------------------------|
+| `admin`     | `Signer`             | The current admin authorized to pause the program. |
+| `config`    | `Account<Config>`    | The global configuration account.                  |
+
+---
+
+#### Arguments
+_None_
+
+---
+
+#### Validations
+- `admin` must be the current admin stored in `config.admin`
+- `config.status` must currently be `Active`
+
+---
+
+#### Logic
+1. Check that `admin.key() == config.admin`
+2. Set `config.status = Paused`
+
+---
+
+#### Emits / Side Effects
+- Updates `Config.status` to `Paused`
+- Halts critical user actions (create round, place bet)
+
+---
+
+#### Errors
+| Code             | Meaning                                            |
+|-------------------|-----------------------------------------------------|
+| `Unauthorized`      | If the caller is not the current `config.admin`     |
+| `AlreadyPaused`     | If the config is already in `Paused` state           |
+
+---
+
+### Admin: Unpause Program
+
+#### Purpose
+Allows the admin to **resume** the program by updating the `Config.status` field back to `Active`.  
+After unpausing, normal operations (creating rounds, placing bets) can continue.
+
+---
+
+#### Context
+| Field       | Type                | Description                                          |
+|-------------|---------------------|---------------------------------------------------------|
+| `admin`     | `Signer`             | The current admin authorized to unpause the program.     |
+| `config`    | `Account<Config>`    | The global configuration account.                         |
+
+---
+
+#### Arguments
+_None_
+
+---
+
+#### Validations
+- `admin` must be the current admin stored in `config.admin`
+- `config.status` must currently be `Paused`
+
+---
+
+#### Logic
+1. Check that `admin.key() == config.admin`
+2. Set `config.status = Active`
+
+---
+
+#### Emits / Side Effects
+- Updates `Config.status` to `Active`
+- Resumes normal operations
+
+---
+
+#### Errors
+| Code             | Meaning                                             |
+|-------------------|------------------------------------------------------|
+| `Unauthorized`      | If the caller is not the current `config.admin`       |
+| `AlreadyActive`     | If the config is already in `Active` state               |
 
 ### Admin: Emergency Pause
 Pauses emergency deposit and place bet operations. Only the admin can perform this action.
@@ -664,3 +870,4 @@ Allows players to withdraw their bets before the round ends.
 Allows players to claim their rewards after the round has been settled.
 
 ## PDA Seeds Strategy
+- **Config**: `["config"]`
