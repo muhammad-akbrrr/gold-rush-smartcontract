@@ -65,19 +65,19 @@ sequenceDiagram
     participant Program
 
     %% Round creation
-    Admin->>Program: create_round(round_id, start_time, end_time, ...)
-    Note right of Program: round.status = Scheduled
+    Admin->>Program: create_round(round_id, asset, start_time, end_time, ...)
+    Note right of Program: round.status = Planned
 
-    %% User actions (place / withdraw) - validated by time (cutoff)
+    %% User actions (place / withdraw)
     User->>Program: place_bet(round_id, bet_type, amount)
-    alt now < end_time
+    alt now < round.end_time
       Program-->>User: accept_bet(tx confirmed)
-    else now >= end_time
+    else
       Program-->>User: reject_bet("cutoff reached")
     end
 
     User->>Program: withdraw_bet(round_id, bet_id)
-    alt now < end_time
+    alt now < round.end_time
       Program-->>User: refund_confirmed
     else
       Program-->>User: reject_withdraw("cutoff reached")
@@ -87,7 +87,7 @@ sequenceDiagram
     loop every N minutes
       Keeper->>Program: fetch_scheduled_rounds()
       Keeper->>Program: auto_activate_if(now >= start_time)
-      Program-->>Keeper: ack (round.status = Active)
+      Program-->>Keeper: ack (round.status = Active, locked_price set)
     end
 
     %% Keeper: settlement path (active/pending)
@@ -104,9 +104,9 @@ sequenceDiagram
         end
 
         alt received price
-          Keeper->>Program: settle_round(round_id, price, proof?/metadata)
-          Program-->>Program: determine_winners()
-          Program-->>Program: calculate_and_set_claimable_amounts()
+          Keeper->>Program: settle_round(round_id, final_price)
+          Program-->>Program: set bet.status = Won/Lost
+          Program-->>Program: sum winners_weight → round.winners_weight
           Program-->>Keeper: ack (round.status = Ended)
         else all failed
           Keeper->>Program: set_pending_settlement(round_id, reason="oracle_fail")
@@ -115,11 +115,13 @@ sequenceDiagram
       end
     end
 
-    %% After settlement user claims
+    %% After settlement, user claims reward
     User->>Program: claim_reward(round_id, bet_id)
-    alt bet.claimable_amount > 0 and not bet.claimed
-      Program-->>User: transfer_reward
-      Program-->>User: mark_claimed
+    alt bet.status == Won and not bet.claimed
+      Program-->>Program: reward = bet.weight / round.winners_weight * round.total_pool
+      Program-->>Program: transfer_reward_from_vault(user, reward)
+      Program-->>User: reward_transferred
+      Program-->>Program: mark bet.claimed = true
     else
       Program-->>User: reject_claim
     end
@@ -139,8 +141,8 @@ flowchart TD
     G -- Yes --> I[Users Place Bets]
     I --> J{Cutoff Reached?}
     J -- No --> O[Wait Until Cutoff Reached]
-    J -- Yes --> K[Settle Round]
-    K --> L[Users Claim Rewards]
+    J -- Yes --> K[Settle Round (update bet status + sum winners_weight)]
+    K --> L[Users Claim Rewards (calculate reward based on weight)]
     L --> M[Prepare Next Round]
     M --> F
 
@@ -170,7 +172,13 @@ stateDiagram-v2
 
     Configured --> RoundScheduled: Create Scheduled Round<br/>create_round(start_time, end_time)
     RoundScheduled --> RoundActive: Start Round (when start_time)<br/>auto_activate()
-    RoundActive --> Configured: Settle Round<br/>settle_round()
+    RoundActive --> Configured: Settle Round<br/>settle_round()  
+        note right of RoundActive
+            Settle Round marks bets as Won/Lost
+            Sums winners_weight in Round
+            Reward calculation deferred to user claim
+        end note
+
     RoundScheduled --> Configured: Cancel Round<br/>cancel_round() 
     RoundActive --> Configured: Cancel Round<br/>cancel_round()
 
@@ -206,11 +214,14 @@ stateDiagram-v2
 graph TD
     A[Select Active Round] --> B[Place Bet]
     B --> C{Before End Time?}
-    C -->|No| D[Round Closed]
-    C -->|Yes| E[Wait for Settlement]
-    E --> F{Bet Result}
-    F -->|Win| G[Claim Reward]
-    F -->|Lose| H[No Action Needed]
+    C -->|No| D[Round Closed - cannot bet]
+    C -->|Yes| E[Wait for Round End]
+    E --> F{Round Settled?}
+    F -->|Yes| G{Bet Result}
+    G -->|Win| H[Claim Reward - calculate reward using weight]
+    G -->|Lose| I[No Action Needed]
+    F -->|No| J[Wait for Settlement]
+
 ```
 
 ### User (Low-level)
@@ -223,37 +234,43 @@ stateDiagram-v2
     Waiting --> Betting: Start time reached
     Betting --> Active: Bet Stored
 
-    Active --> Active: Cancel Bet<br/>withdraw_bet()
+    Active --> Active: Cancel Bet<br/>withdraw_bet() before end_time
     Active --> Locked: Round End<br/>end_time_reached()
-    
-    Locked --> Settled: Round Settled<br/>settle_round()
-    Settled --> Claimed: Claim Rewards<br/>claim_rewards()
 
-    Claimed --> [*]: User got rewards
+    Locked --> Settled: Round Status = Ended<br/>settle_round() sets Won/Lost and winners_weight
+    Settled --> Claiming: User claims reward<br/>claim_reward()
+    Claiming --> Claimed: Transfer reward based on bet weight
+
+    Claimed --> [*]: User got reward
 
     note right of Browsing
-        User can view the list of active rounds and select the round you want to participate in.
+        User can view active rounds and select the round to participate.
     end note
 
     note right of Betting
-        User selects the bet type (Gold Price / Stock Price) and the number of tokens.
+        User selects bet type (Gold Price / Stock Price) and amount.
     end note
 
     note right of Active
-        The bet has been saved. Users can cancel before the cutoff.
+        Bet is stored. User can cancel before end_time (cutoff).
     end note
 
     note right of Locked
-        Cannot cancel bet. Waiting for settlement results
+        Cannot cancel bet. Waiting for round settlement.
     end note
 
     note right of Settled
-        The bet result is determined. Prizes are available if user win.
+        Bet status determined (Won/Lost). Reward amount not yet claimed.
+    end note
+
+    note right of Claiming
+        Reward is calculated using bet weight / winners_weight * total_pool.
     end note
 
     note right of Claimed
-        User successfully claimed prize Bet completed
+        User successfully claimed reward. Bet completed.
     end note
+
 ```
 
 ### Keeper (High-level)
@@ -276,10 +293,9 @@ flowchart TD
     H -- YES --> K[Continue Settlement]
 
     K --> L[Determine Winners & Losers]
-    L --> M[Calculate Rewards for Winners]
+    L --> M[Update winners_weight in Round]
     M --> N[Mark Bets as Won/Lost]
     N --> O[Set Round Status Ended]
-    O --> P[Set Claimable Amount for Winners]
 ```
 
 ### Keeper (Low-level)
@@ -295,30 +311,30 @@ stateDiagram-v2
 
     PendingSettlement --> Settling: Retry Settlement<br/>get_price() success
 
-    Settling --> Ended: Settlement Success<br/>set_bets_won_lost() + set_claimable_amount()
+    Settling --> Ended: Settlement Success<br/>set_bets_won_lost() + update winners_weight in Round
 
     note right of Scheduled
-        The round was created by an admin with a start_time in the future. Unable to accept bets yet. The guard continues to check every few minutes.
+        The round was created by an admin with a start_time in the future. Unable to accept bets yet. The keeper continues to check periodically.
     end note
 
     note right of Active
-        The round has started. Users can place bets. The Keeper waits until the end time reached to trigger settlement.
+        The round has started. Users can place bets. The Keeper waits until end_time to trigger settlement.
     end note
 
     note right of PendingSettlement
-       Settlement failed due to failure to obtain a price. The Keeper will try again in the next loop. The user cannot bet (must lock bet).
+       Settlement failed due to oracle error. Keeper retries in next loop. Users cannot bet.
     end note
 
     note right of Settling
-        The Keeper is currently executing the settlement process:
-        - Get price
-        - Calculate winners
-        - Mark bets as wins/losses
-        - Calculate rewards
+        The Keeper executes settlement:
+        - Obtain price
+        - Determine winners/losers
+        - Update winners_weight
+        - Mark bets as Won/Lost
     end note
 
     note right of Ended
-        Settlement complete. The round is marked as over. Users cannot bet or withdraw. They can only claim their rewards if they win
+        Round is ended. Users cannot bet or withdraw. They can claim rewards based on weight.
     end note
 ```
 
@@ -361,25 +377,6 @@ pub enum ContractStatus {
 ```
 
 ### Round
-- `round`: The round number.
-- `total_up_stake`: Total amount staked on Up bets.
-- `total_down_stake`: Total amount staked on Down bets.
-- `total_pct_stake`: Total amount staked on Percentage Change bets.
-- `cutoff_time`: The time when betting closes for the round.
-- `status`: The status of the round (Future, Active, PendingSettlement, Ended).
-- `bump`: A bump seed for PDA.
-
-### Bet
-- `bettor`: The address of the player placing the bet.
-- `round`: The round number for which the bet is placed.
-- `bet_type`: The type of bet (e.g., Up, Down, Percentage Change).
-- `amount`: The amount of GRT bet.
-- `status`: The status of the bet (e.g., Pending, Won, Lost).
-- `odds`: The odds associated with the bet type.
-- `timestamp`: The timestamp when the bet was placed.
-- `claimable_amount`: The amount that can be claimed as a reward.
-- `claimed`: A boolean indicating if the reward has been claimed.
-- `bump`: A bump seed for PDA.
 
 ```rust
 pub struct Round {
@@ -396,6 +393,7 @@ pub struct Round {
   pub final_price: Option<u64>,  // The price when round is settled.
   pub total_pool: u64,           // The total amount of GRT bet in this round.
   pub total_bets: u64,           // The total number of bets placed in this round.
+  pub winners_weight: u64,       // The total weight of winning bets (for reward calculation). Default to 0 if no winners.
 
   // --- Metadata ---
   pub created_at: i64,           // The timestamp when the round was created.
@@ -413,11 +411,43 @@ pub enum RoundStatus {
 }
 ```
 
-### PriceFeed
-- `price`: The current price fetched from the oracle.
-- `timestamp`: The timestamp of the last price update.
-- `slot`: The slot number of the last price update.
-- `bump`: A bump seed for PDA.
+### Bet
+```rust
+pub struct Bet {
+  // --- Identify ---
+  pub round: Pubkey,           // The round this bet is associated with.
+  pub bettor: Pubkey,          // The address of the player placing the bet.
+
+  // --- Bet Info ---
+  pub amount: u64,            // The amount of GRT bet.
+  pub side: BetSide,          // The type of bet (Up, Down, PercentageChange).
+  pub claimed: bool,          // Whether the reward has been claimed.
+  pub weight: u64,            // The weight of the bet (for reward calculation).
+
+  // --- State ---
+  pub status: BetStatus,      // The status of the bet (Pending, Won, Lost).
+
+  // --- Metadata ---
+  pub created_at: i64,        // The timestamp when the bet was placed.
+  pub bump: u8,               // A bump seed for PDA.
+}
+
+// Enum for bet types
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
+pub enum BetSide {
+    Up,
+    Down,
+    PercentageChange(i16),   // e.g., 10 for 0.1%, -25 for -0.25%
+}
+
+// Enum for bet status
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
+pub enum BetStatus {
+    Pending,
+    Won,
+    Lost,
+}
+```
 
 ## Program Instructions
 ### Initialize
