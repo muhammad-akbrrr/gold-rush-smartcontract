@@ -920,10 +920,127 @@ Users can only place bets while the round is in Active status.
 Cancels an active or scheduled round and refunds all bets. Only the admin can perform this action
 
 ### Keeper: Start Round
-Starts a scheduled round when the start_time is reached. Only the keeper authority can perform this action.
+
+#### Purpose
+This instruction is executed by the Keeper to start a round that was previously in the Planned state.
+When called, the round becomes Active, allowing users to place bets (place_bet()).
+
+---
+
+#### Context
+| Field         | Type                  | Description                                |
+|-------------------|-----------------------|----------------------------------------------|
+| `keeper` | `Signer` | The keeper authorized to trigger the start of the round. |
+| `config` | `Account<Config>` | The global config that stores the list of keepers. |
+| `round` | `Account<Round>` | The round currently in `Scheduled` status. |
+
+---
+
+#### Arguments
+| Name            | Type       | Description                            |
+|----------------|-------------|--------------------------------------------|
+| `asset_price` | `u64` | The price of the asset being staked. |
+
+---
+
+#### Validations
+- `keeper` must be in `config.keeper_authorities`
+- `round.status == Planned`
+- `Clock::now() >= round.start_time`
+- `config.status == Active`
+- `asset_price > 0`
+
+---
+
+#### Logic
+1. Change `round.status` to `Active`
+2. Set `round.settled_at = Clock::now()`
+3. Set `round.locked_price = asset_price`
+
+---
+
+#### Emits / Side Effects
+- Change `Round` status from `Planned` → `Active`
+- Indicate that users can now start placing bets (`place_bet()`) on this round
+
+---
+
+## Errors
+| Code                  | Meaning                                             |
+|-----------------------------|---------------------------------------------------|
+| `UnauthorizedKeeper` | If `keeper` is not part of `config.keeper_authorities` |
+| `InvalidRoundStatus` | If `round.status` is not `Planned` |
+| `RoundNotReady` | If `Clock::now() < round.start_time` |
+| `ProgramPaused` | If `config.status != Active` |
+| `InvalidAssetPrice` | If `asset_price == 0` |
 
 ### Keeper: Settle Round
-Settles a round by determining winners and losers based on the final price from the Oracle. Only the keeper can perform this action.
+
+#### Purpose
+This instruction is executed by the Keeper to perform settlement on a round that has reached its end_time.
+The settlement process retrieves the final price from the oracle, determines the winner and loser, calculates the winners_weight, and marks all bets as either Won or Lost.
+After successful settlement, the round status changes to Ended.
+
+#### Context
+| Field         | Type                    | Description                                         |
+|-------------------|----------------------------|----------------------------------------------------------|
+| `keeper` | `Signer` | The keeper authorized to trigger settlement. |
+| `config` | `Account<Config>` | Global config that stores the list of keepers. |
+| `round` | `Account<Round>` | The round to be settled. |
+| `bet_list` | `Vec<Account<Bet>>` | All bets associated with this round. |
+
+---
+
+#### Arguments
+| Name         | Type      | Description                                      |
+|---------------|---------------|-------------------------------------------------|
+| **asset_price**      | `u64`                   | The price of the asset being settled. |
+
+---
+
+## Validations
+- `keeper` must be present in `config.keeper_authorities`
+- `round.status` must be `Active` or `PendingSettlement`
+- `Clock::now() >= round.end_time`
+- `config.status == Active`
+- `bet_list` cannot be empty
+
+---
+
+## Logic
+1. if `final_price` is not provided (0) set `round.status = PendingSettlement` and return (keeper will retry later).
+2. Otherwise, proceed with settlement:
+    - Set `round.final_price = final_price`
+    - Calculate the result of each `bet`:
+      - If the prediction is correct → `bet.status = Won`
+      - If the prediction is incorrect → `bet.status = Lost`
+    - Calculate and set `winners_weight` based on the total number of tokens won
+    - Calculate total fees and set to `round.total_fee_collected`
+    - Transfer `round.total_fee_collected` from `round.vault` to `config.treasury`
+    - Set `round.total_reward_pool = round.total_pool - round.total_fee_collected`
+    - Change `round.status = Ended`
+    - Set `round.settled_at = Clock::now()`.
+
+---
+
+## Emits / Side Effects
+- Change all `bets` from `Pending` to `Won` or `Lost`
+- Change `round.status` to `Ended`
+- Save `final_price` and `winners_weight` in `round`
+
+---
+
+## Errors
+| Code                        | Meaning                                                 |
+|--------------------------------|-------------------------------------------------------------|
+| `UnauthorizedKeeper` | If `keeper` is not part of `config.keeper_authorities` |
+| `InvalidRoundStatus` | If `round.status` is not `Active` or `PendingSettlement` |
+| `RoundNotReadyForSettlement` | If `Clock::now() < round.end_time` |
+| `ProgramPaused` | If `config.status != Active` |
+| `EmergencyPaused` | If `config.emergency_paused == true` |
+| `NoBetsPlaced` | If `bet_list` is empty |
+
+---
 
 ### User: Place Bet
 Allows a player to place a bet on the current round. Players can choose between Up, Down, or Percentage Change bet types.
