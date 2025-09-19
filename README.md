@@ -632,7 +632,7 @@ Initializes the program for the first time. Creates a `Config` account that stor
 | Field            | Type                  | Description                               |
 |------------------|-----------------------|--------------------------------------------|
 | `initializer`    | `Signer`              | The account that initializes the program (becomes admin if `admin` not provided). |
-| `config`         | `Account<Config>`     | PDA account to store global configuration data.         |
+| `config`         | `Account<Config>` (PDA)     | PDA account to store global configuration data.         |
 | `system_program` | `Program<System>`     | The system program used to create the `config` account.   |
 
 #### Arguments
@@ -696,7 +696,7 @@ Allows the admin to update global configuration settings stored in the `Config` 
 | Field             | Type                  | Description                                      |
 |--------------------|-----------------------|---------------------------------------------------|
 | `admin`              | `Signer`               | The current admin authorized to update the config. |
-| `config`             | `Account<Config>`      | The existing global configuration account.         |
+| `config`             | `Account<Config>` (PDA)      | PDA account to store global configuration data.         |
 
 ---
 
@@ -762,7 +762,7 @@ When paused, new rounds cannot be created and bets cannot be placed.
 | Field       | Type                | Description                                       |
 |-------------|---------------------|---------------------------------------------------|
 | `admin`     | `Signer`             | The current admin authorized to pause the program. |
-| `config`    | `Account<Config>`    | The global configuration account.                  |
+| `config`    | `Account<Config>` (PDA)    | PDA account to store global configuration data.                  |
 
 ---
 
@@ -803,38 +803,26 @@ _None_
 Allows the admin to **resume** the program by updating the `Config.status` field back to `Active`.  
 After unpausing, normal operations (creating rounds, placing bets) can continue.
 
----
-
 #### Context
 | Field       | Type                | Description                                          |
 |-------------|---------------------|---------------------------------------------------------|
 | `admin`     | `Signer`             | The current admin authorized to unpause the program.     |
-| `config`    | `Account<Config>`    | The global configuration account.                         |
-
----
+| `config`    | `Account<Config>` (PDA)    | The global configuration account.                         |
 
 #### Arguments
 _None_
-
----
 
 #### Validations
 - `admin` must be the current admin stored in `config.admin`
 - `config.status` must currently be `Paused`
 
----
-
 #### Logic
 1. Check that `admin.key() == config.admin`
 2. Set `config.status = Active`
 
----
-
 #### Emits / Side Effects
 - Updates `Config.status` to `Active`
 - Resumes normal operations
-
----
 
 #### Errors
 | Code             | Meaning                                             |
@@ -859,12 +847,10 @@ Users can only place bets while the round is in Active status.
 | Account             | Type                       | Description                                      |
 |----------------------|------------------------------|---------------------------------------------------|
 | `keeper` | `Signer` | The authorized keeper who creates a new round. |
-| `config` | `Account<Config>` | The global configuration account, storing common parameters and a list of keepers. |
+| `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
 | `round` | `Account<Round>` (PDA) | The new round account to be initialized. |
 | `vault` | `AccountInfo` (PDA) | The vault account to hold bets for this round. |
 | `system_program` | `Program<System>` | Solana's built-in system program. |
-
----
 
 #### Arguments
 | Name               | Type         | Description                                  |
@@ -873,14 +859,10 @@ Users can only place bets while the round is in Active status.
 | `start_time` | `i64` (unix timestamp) | Round start time |
 | `end_time` | `i64` (unix timestamp) | Round end time |
 
----
-
 #### Validations
 - `start_time < end_time`
 - `start_time > current_timestamp` (cannot create rounds in the past)
 - Caller = `config.admin`
-
----
 
 #### Logic
 1. Derive PDA for `round` using seeds `["round", round_id]` where `round_id = config.current_round_counter + 1` 
@@ -901,13 +883,10 @@ Users can only place bets while the round is in Active status.
    - `created_at = Clock::now()`
    - `settled_at = None`
 4. Increment `config.current_round_counter` by 1
----
 
 ## Emits / Side Effects
 - Create a new `Round` account on the blockchain
 - Record round information into the program state
-
----
 
 ## Errors
 | Code                         | Meaning                                            |
@@ -916,8 +895,12 @@ Users can only place bets while the round is in Active status.
 | `InvalidTimestamps`                  | If `start_time` or `end_time` is invalid |
 | `RoundAlreadyExists`                 | If the PDA for `round_id` has already been created |
 
+---
+
 ### Admin: Cancel Round
 Cancels an active or scheduled round and refunds all bets. Only the admin can perform this action
+
+---
 
 ### Keeper: Start Round
 
@@ -925,23 +908,17 @@ Cancels an active or scheduled round and refunds all bets. Only the admin can pe
 This instruction is executed by the Keeper to start a round that was previously in the Planned state.
 When called, the round becomes Active, allowing users to place bets (place_bet()).
 
----
-
 #### Context
 | Field         | Type                  | Description                                |
 |-------------------|-----------------------|----------------------------------------------|
 | `keeper` | `Signer` | The keeper authorized to trigger the start of the round. |
-| `config` | `Account<Config>` | The global config that stores the list of keepers. |
-| `round` | `Account<Round>` | The round currently in `Scheduled` status. |
-
----
+| `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
+| `round` | `Account<Round>` (PDA) | The round currently in `Scheduled` status. |
 
 #### Arguments
 | Name            | Type       | Description                            |
 |----------------|-------------|--------------------------------------------|
 | `asset_price` | `u64` | The price of the asset being staked. |
-
----
 
 #### Validations
 - `keeper` must be in `config.keeper_authorities`
@@ -950,20 +927,14 @@ When called, the round becomes Active, allowing users to place bets (place_bet()
 - `config.status == Active`
 - `asset_price > 0`
 
----
-
 #### Logic
 1. Change `round.status` to `Active`
 2. Set `round.settled_at = Clock::now()`
 3. Set `round.locked_price = asset_price`
 
----
-
 #### Emits / Side Effects
 - Change `Round` status from `Planned` → `Active`
 - Indicate that users can now start placing bets (`place_bet()`) on this round
-
----
 
 ## Errors
 | Code                  | Meaning                                             |
@@ -973,6 +944,8 @@ When called, the round becomes Active, allowing users to place bets (place_bet()
 | `RoundNotReady` | If `Clock::now() < round.start_time` |
 | `ProgramPaused` | If `config.status != Active` |
 | `InvalidAssetPrice` | If `asset_price == 0` |
+
+---
 
 ### Keeper: Settle Round
 
@@ -985,18 +958,14 @@ After successful settlement, the round status changes to Ended.
 | Field         | Type                    | Description                                         |
 |-------------------|----------------------------|----------------------------------------------------------|
 | `keeper` | `Signer` | The keeper authorized to trigger settlement. |
-| `config` | `Account<Config>` | Global config that stores the list of keepers. |
-| `round` | `Account<Round>` | The round to be settled. |
-| `bet_list` | `Vec<Account<Bet>>` | All bets associated with this round. |
-
----
+| `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
+| `round` | `Account<Round>` (PDA) | The round to be settled. |
+| `bet_list` | `Vec<Account<Bet>>` (PDA) | All bets associated with this round. |
 
 #### Arguments
 | Name         | Type      | Description                                      |
 |---------------|---------------|-------------------------------------------------|
 | **asset_price**      | `u64`                   | The price of the asset being settled. |
-
----
 
 ## Validations
 - `keeper` must be present in `config.keeper_authorities`
@@ -1004,8 +973,6 @@ After successful settlement, the round status changes to Ended.
 - `Clock::now() >= round.end_time`
 - `config.status == Active`
 - `bet_list` cannot be empty
-
----
 
 ## Logic
 1. if `final_price` is not provided (0) set `round.status = PendingSettlement` and return (keeper will retry later).
@@ -1021,14 +988,10 @@ After successful settlement, the round status changes to Ended.
     - Change `round.status = Ended`
     - Set `round.settled_at = Clock::now()`.
 
----
-
 ## Emits / Side Effects
 - Change all `bets` from `Pending` to `Won` or `Lost`
 - Change `round.status` to `Ended`
 - Save `final_price` and `winners_weight` in `round`
-
----
 
 ## Errors
 | Code                        | Meaning                                                 |
@@ -1051,11 +1014,9 @@ Bets placed are stored in the Round Vault and can be canceled before the `end_ti
 | Field         | Type                    | Description                                         |
 |-------------------|----------------------------|----------------------------------------------------------|
 | `bettor` | `Signer` | The address of the player placing the bet. |
-| `config` | `Account<Config>` | Global config that stores the list of keepers. |
-| `round` | `Account<Round>` | The round to be settled. |
+| `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
+| `round` | `Account<Round>` (PDA) | The round to be settled. |
 | `bet` | `Account<Bet>` (PDA) | The bet account to be initialized. Only one bet can be placed per round. |
-
----
 
 #### Arguments
 | Name         | Type      | Description                                      |
@@ -1063,17 +1024,13 @@ Bets placed are stored in the Round Vault and can be canceled before the `end_ti
 | `amount` | `u64` | The number of tokens wagered. |
 | `direction` | `enum` | `BetSide` enum |
 
----
-
-## Validations
+#### Validations
 - `Clock::now() < round.end_time`
 - `amount >= config.min_bet_amount`
 - `config.status == Active`
 - `round.status == Active`
 
----
-
-## Logic
+#### Logic
 1. Transfer `amount` of GRT from `bettor` to `round.vault`
 2. Initialize `bet` fields:
     - Set `bet.user = bettor.key()`
@@ -1087,14 +1044,11 @@ Bets placed are stored in the Round Vault and can be canceled before the `end_ti
 3. Update `round` fields:
     - Increment `round.total_pool` by `amount`
     - Increment `round.total_bets` by `1`
----
 
-## Emits / Side Effects
+#### Emits / Side Effects
 - Bet placed and stored in `round.vault`
 
----
-
-## Errors
+#### Errors
 | Code                        | Meaning                                                 |
 |--------------------------------|-------------------------------------------------------------|
 | `RoundNotActive` | If `round.status` is not `Active` |
@@ -1105,10 +1059,55 @@ Bets placed are stored in the Round Vault and can be canceled before the `end_ti
 ---
 
 ### User: Withdraw Bet
-Allows players to withdraw their bets before the round ends.
+#### Purpose
+This instruction allows the User to **cancel/withdraw their bet** (`withdraw_bet`) from an active round before the round's `end_time` is reached. The bet's funds are refunded back to the User, and the bet is marked as `Canceled`.
+
+#### Context
+| Field         | Type                    | Description                                         |
+|-------------------|----------------------------|----------------------------------------------------------|
+| `bettor` | `Signer` | The address of the player placing the bet. |
+| `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
+| `round` | `Account<Round>` (PDA) | The round to be settled. |
+| `bet` | `Account<Bet>` (PDA) | The bet account previously initialized for this round. |
+
+#### Arguments
+_None_
+
+#### Validations
+- `Clock::now() < round.end_time`
+- `config.status == Active`
+- `round.status == Active`
+- `bet.user == bettor.key()`
+- `bet.status == Pending`
+
+#### Logic
+1. Transfer `bet.amount` of GRT from `round.vault` back to `bettor`
+2. Update `bet` fields::
+    - Set `bet.status = Canceled`
+3. Close `bet` account to `bettor`
+4. Update `round` fields:
+    - Decrement `round.total_pool` by `amount`
+    - Decrement `round.total_bets` by `1`
+
+#### Emits / Side Effects
+- Bet is canceled and removed from the round pool
+- Funds are refunded back to the user
+
+#### Errors
+| Code                        | Meaning                                                 |
+|--------------------------------|-------------------------------------------------------------|
+| `Unauthorized` | If `bet.user != bettor.key()` |
+| `RoundNotActive` | If `round.status` is not `Active` |
+| `RoundEnded` | If `Clock::now() >= round.end_time` |
+| `ProgramPaused` | If `config.status != Active` |
+| `InvalidBetStatus` | If `bet.status` is not `Pending` |
+
+---
 
 ### User: Claim Reward
 Allows players to claim their rewards after the round has been settled.
+
+---
 
 ## PDA Seeds Strategy
 - **Config**: `["config"]`
