@@ -1043,7 +1043,66 @@ After successful settlement, the round status changes to Ended.
 ---
 
 ### User: Place Bet
-Allows a player to place a bet on the current round. Players can choose between Up, Down, or Percentage Change bet types.
+#### Purpose
+This instruction allows the User to place a bet (`place_bet`) on an active round that is still open (`now < end_time`).
+Bets placed are stored in the Round Vault and can be canceled before the `end_time`.
+
+#### Context
+| Field         | Type                    | Description                                         |
+|-------------------|----------------------------|----------------------------------------------------------|
+| `bettor` | `Signer` | The address of the player placing the bet. |
+| `config` | `Account<Config>` | Global config that stores the list of keepers. |
+| `round` | `Account<Round>` | The round to be settled. |
+| `bet` | `Account<Bet>` (PDA) | The bet account to be initialized. Only one bet can be placed per round. |
+
+---
+
+#### Arguments
+| Name         | Type      | Description                                      |
+|---------------|---------------|-------------------------------------------------|
+| `amount` | `u64` | The number of tokens wagered. |
+| `direction` | `enum` | `BetSide` enum |
+
+---
+
+## Validations
+- `Clock::now() < round.end_time`
+- `amount >= config.min_bet_amount`
+- `config.status == Active`
+- `round.status == Active`
+
+---
+
+## Logic
+1. Transfer `amount` of GRT from `bettor` to `round.vault`
+2. Initialize `bet` fields:
+    - Set `bet.user = bettor.key()`
+    - Set `bet.round = round.key()`
+    - Set `bet.amount = amount`
+    - Set `bet.side = direction`
+    - Set `bet.status = Pending`
+    - Set `bet.claimed = false`
+    - Calculate and set `bet.weight` based on amount, side, and time factor
+    - Set `bet.created_at = Clock::now()`
+3. Update `round` fields:
+    - Increment `round.total_pool` by `amount`
+    - Increment `round.total_bets` by `1`
+---
+
+## Emits / Side Effects
+- Bet placed and stored in `round.vault`
+
+---
+
+## Errors
+| Code                        | Meaning                                                 |
+|--------------------------------|-------------------------------------------------------------|
+| `RoundNotActive` | If `round.status` is not `Active` |
+| `RoundEnded` | If `Clock::now() >= round.end_time` |
+| `BetBelowMinimum` | If `amount < config.min_bet_amount` |
+| `ProgramPaused` | If `config.status != Active` |
+
+---
 
 ### User: Withdraw Bet
 Allows players to withdraw their bets before the round ends.
