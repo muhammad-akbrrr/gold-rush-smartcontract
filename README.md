@@ -1105,9 +1105,52 @@ _None_
 ---
 
 ### User: Claim Reward
-Allows players to claim their rewards after the round has been settled.
+#### Purpose
+This instruction allows the User to claim their reward (`claim_reward`) if their bet has won after the round is settled. The reward amount is based on the ratio of the user's bet weight to the total winners' weight in the round.
 
+#### Context
+| Field         | Type                    | Description                                         |
+|-------------------|----------------------------|----------------------------------------------------------|
+| `bettor` | `Signer` | The address of the player placing the bet. |
+| `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
+| `round` | `Account<Round>` (PDA) | The round to be settled. |
+| `bet` | `Account<Bet>` (PDA) | The bet account previously initialized for this round. |
+
+#### Arguments
+_None_
+
+#### Validations
+- `round.status == Ended`
+- `bet.user == bettor.key()`
+- `bet.status == Won`
+- `bet.claimed == false`
+
+#### Logic
+1. Calculate reward:
+$$
+\text{reward} = \frac{\text{bet.weight}}{\text{round.winners\_weight}} \times \text{round.total\_reward\_pool}
+$$
+2. Transfer reward `amount` of GRT from `round.vault` to `bettor`
+3. Update `bet` fields:
+    - Set `bet.claimed = true`
+
+#### Emits / Side Effects
+- Reward transferred from the round vault to the user's wallet
+- Bet is marked as claimed
+
+#### Errors
+| Code                        | Meaning                                                 |
+|--------------------------------|-------------------------------------------------------------|
+| `Unauthorized` | If `bet.user != bettor.key()` |
+| `RoundNotEnded` | If `round.status != Ended` |
+| `BetNotWon` | If `bet.status != Won` |
+| `AlreadyClaimed` | If `bet.claimed == true` |
 ---
 
 ## PDA Seeds Strategy
 - **Config**: `["config"]`
+- **Round**: `["round", round_id]` where `round_id` is a u64 converted to bytes
+- **Vault**: `["vault", round_id]` where `round_id` is a u64 converted to bytes
+- **Bet**: `["bet", round_id, bettor_pubkey]` where `round_id` is a u64 converted to bytes and `bettor_pubkey` is the user's public key
+
+## Error Codes
