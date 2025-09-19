@@ -384,6 +384,7 @@ pub struct Round {
   pub start_time: i64,           // The timestamp when round is scheduled to start.
   pub end_time: i64,             // The timestamp when round is scheduled to end.
   pub vault: Pubkey,             // The vault account holding the bets for this round.
+  pub market_type: MarketType,   // The type of market (GoldPrice, StockPrice).
 
   // --- State ---
   pub status: RoundStatus,       // The current status of the round (Planned, Active, PendingSettlement, Ended).
@@ -408,6 +409,13 @@ pub enum RoundStatus {
     Active,                     // Currently accepting bets
     PendingSettlement,          // Ended but settlement failed, needs retry
     Ended,                      // Successfully settled
+}
+
+// Enum for market types
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
+pub enum MarketType {
+    GoldPrice,
+    StockPrice,
 }
 ```
 
@@ -654,9 +662,8 @@ Initializes the program for the first time. Creates a `Config` account that stor
 - `min_bet_amount` must be greater than `0`
 
 #### Logic
-1. Derive PDA for `config` using seeds `["config"]`
-2. Create the `config` account
-3. Initialize fields:
+1. Create the `config` account
+2. Initialize fields:
    - `admin = admin.unwrap_or(initializer.key())`
    - `settlement_authority = settlement_authority`
    - `keeper_authorities = keeper_authorities`
@@ -665,7 +672,7 @@ Initializes the program for the first time. Creates a `Config` account that stor
    - `fee_gold_price_bps = fee_gold_price_bps`
    - `fee_stock_price_bps = fee_stock_price_bps`
    - `min_bet_amount = min_bet_amount`
-4. Set default fields:
+3. Set default fields:
    - `status = Active`
    - `current_round_counter = 0`
    - `version = 1`
@@ -858,6 +865,7 @@ Users can only place bets while the round is in Active status.
 | `asset` | `[u8; 8]` | The asset being bet on |
 | `start_time` | `i64` (unix timestamp) | Round start time |
 | `end_time` | `i64` (unix timestamp) | Round end time |
+| `market_type` | `MarketType` | The type of market (GoldPrice, StockPrice) |
 
 #### Validations
 - `start_time < end_time`
@@ -865,13 +873,14 @@ Users can only place bets while the round is in Active status.
 - Caller = `config.admin`
 
 #### Logic
-1. Derive PDA for `round` using seeds `["round", round_id]` where `round_id = config.current_round_counter + 1` 
-2. Create round `vault` account to hold bets
-3. Initialize `round` fields:
+1. Create round `vault` account to hold bets
+2. Initialize `round` fields:
    - `round_id = config.current_round_counter + 1`
    - `asset = asset`
    - `start_time = start_time`
    - `end_time = end_time`
+   - `market_type = market_type`
+   - `vault = vault.key()`
    - `status = Planned`
    - `locked_price = 0`
    - `final_price = None`
@@ -882,7 +891,7 @@ Users can only place bets while the round is in Active status.
    - `winners_weight = 0`
    - `created_at = Clock::now()`
    - `settled_at = None`
-4. Increment `config.current_round_counter` by 1
+3. Increment `config.current_round_counter` by 1
 
 ## Emits / Side Effects
 - Create a new `Round` account on the blockchain
