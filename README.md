@@ -1148,9 +1148,243 @@ $$
 ---
 
 ## PDA Seeds Strategy
-- **Config**: `["config"]`
-- **Round**: `["round", round_id]` where `round_id` is a u64 converted to bytes
-- **Vault**: `["vault", round_id]` where `round_id` is a u64 converted to bytes
-- **Bet**: `["bet", round_id, bettor_pubkey]` where `round_id` is a u64 converted to bytes and `bettor_pubkey` is the user's public key
+
+This program uses Program Derived Addresses (PDA) to create deterministic and predictable accounts. Here's the seed strategy used:
+
+### Config Account
+- **Seeds**: `["config"]`
+- **Purpose**: Stores global program configuration such as admin, treasury, fee settings, and program status
+- **Unique**: Yes, only one config account per program
+- **Example**: Program ID + ["config"] → Config PDA
+
+### Round Account  
+- **Seeds**: `["round", round_id]`
+- **Purpose**: Stores round betting information such as asset, start/end time, status, total pool, etc.
+- **Unique**: Yes, one account per round_id
+- **Parameters**:
+  - `round_id`: u64 converted to bytes (little-endian)
+- **Example**: Program ID + ["round", 1u64.to_le_bytes()] → Round PDA for round 1
+
+### Vault Account
+- **Seeds**: `["vault", round_id]`  
+- **Purpose**: Token account that stores all GRT tokens from bets in a single round
+- **Unique**: Yes, one vault per round
+- **Parameters**:
+  - `round_id`: u64 converted to bytes (little-endian)
+- **Example**: Program ID + ["vault", 1u64.to_le_bytes()] → Vault PDA for round 1
+
+### Bet Account
+- **Seeds**: `["bet", round_id, bettor_pubkey]`
+- **Purpose**: Stores individual user bet information for a specific round
+- **Unique**: Yes, one bet per user per round
+- **Parameters**:
+  - `round_id`: u64 converted to bytes (little-endian)  
+  - `bettor_pubkey`: Public key of the user making the bet (32 bytes)
+- **Example**: Program ID + ["bet", 1u64.to_le_bytes(), user_pubkey] → Bet PDA for user in round 1
+
+### Rust Implementation
+
+```rust
+// Config PDA
+let (config_pda, config_bump) = Pubkey::find_program_address(
+    &[b"config"],
+    program_id
+);
+
+// Round PDA  
+let (round_pda, round_bump) = Pubkey::find_program_address(
+    &[b"round", &round_id.to_le_bytes()],
+    program_id
+);
+
+// Vault PDA
+let (vault_pda, vault_bump) = Pubkey::find_program_address(
+    &[b"vault", &round_id.to_le_bytes()],
+    program_id
+);
+
+// Bet PDA
+let (bet_pda, bet_bump) = Pubkey::find_program_address(
+    &[b"bet", &round_id.to_le_bytes(), bettor.key().as_ref()],
+    program_id
+);
+```
+
+---
 
 ## Error Codes
+
+The following is a complete list of error codes used in the Gold Rush program:
+
+### General Program Errors (0x1000 - 0x1999)
+
+| Code | Hex | Name | Description |
+|------|-----|------|-------------|
+| 4096 | 0x1000 | `AlreadyInitialized` | Config has already been initialized |
+| 4097 | 0x1001 | `Unauthorized` | Action not allowed for this account |
+| 4098 | 0x1002 | `ProgramPaused` | Program is currently in paused status |
+| 4099 | 0x1003 | `EmergencyPaused` | Program is currently in emergency paused status |
+| 4100 | 0x1004 | `AlreadyPaused` | Program is already in paused status |
+| 4101 | 0x1005 | `AlreadyActive` | Program is already in active status |
+
+### Configuration Errors (0x2000 - 0x2999)
+
+| Code | Hex | Name | Description |
+|------|-----|------|-------------|
+| 8192 | 0x2000 | `InvalidFee` | Fee basis points >= 10000 (100%) |
+| 8193 | 0x2001 | `InvalidMinBetAmount` | Minimum bet amount is 0 or invalid |
+| 8194 | 0x2002 | `NoKeeperAuthorities` | Keeper authorities list is empty |
+| 8195 | 0x2003 | `UnauthorizedKeeper` | Keeper is not in the authorized keepers list |
+
+### Round Management Errors (0x3000 - 0x3999)
+
+| Code | Hex | Name | Description |
+|------|-----|------|-------------|
+| 12288 | 0x3000 | `InvalidTimestamps` | start_time >= end_time or time is in the past |
+| 12289 | 0x3001 | `RoundAlreadyExists` | Round with this ID already exists |
+| 12290 | 0x3002 | `InvalidRoundStatus` | Round status is not suitable for this action |
+| 12291 | 0x3003 | `RoundNotReady` | Round is not ready to be activated (time has not arrived) |
+| 12292 | 0x3004 | `RoundNotActive` | Round is not in Active status |
+| 12293 | 0x3005 | `RoundEnded` | Round has ended, cannot bet/withdraw |
+| 12294 | 0x3006 | `RoundNotEnded` | Round has not ended yet for settlement/claim |
+| 12295 | 0x3007 | `RoundNotReadyForSettlement` | Round is not ready to be settled |
+| 12296 | 0x3008 | `InvalidAssetPrice` | Asset price is 0 or invalid |
+
+### Betting Errors (0x4000 - 0x4999)
+
+| Code | Hex | Name | Description |
+|------|-----|------|-------------|
+| 16384 | 0x4000 | `BetBelowMinimum` | Bet amount is below the specified minimum |
+| 16385 | 0x4001 | `InvalidBetStatus` | Bet status is not suitable for this action |
+| 16386 | 0x4002 | `BetNotWon` | Bet did not win, cannot claim reward |
+| 16387 | 0x4003 | `AlreadyClaimed` | Reward has already been claimed |
+| 16388 | 0x4004 | `NoBetsPlaced` | No bets were placed in this round |
+
+### Settlement & Claim Errors (0x5000 - 0x5999)
+
+| Code | Hex | Name | Description |
+|------|-----|------|-------------|
+| 20480 | 0x5000 | `OracleError` | Error retrieving data from oracle |
+| 20481 | 0x5001 | `SettlementFailed` | Settlement process failed |
+| 20482 | 0x5002 | `InsufficientVaultBalance` | Vault balance is insufficient for payment |
+| 20483 | 0x5003 | `RewardCalculationError` | Error in reward calculation |
+
+### Account & Token Errors (0x6000 - 0x6999)
+
+| Code | Hex | Name | Description |
+|------|-----|------|-------------|
+| 24576 | 0x6000 | `InvalidTokenAccount` | Token account is not valid |
+| 24577 | 0x6001 | `InsufficientBalance` | User balance is insufficient for bet |
+| 24578 | 0x6002 | `InvalidMint` | Token mint does not match configuration |
+| 24579 | 0x6003 | `TokenTransferFailed` | Token transfer failed |
+
+### Custom Error Implementation
+
+```rust
+use anchor_lang::prelude::*;
+
+#[error_code]
+pub enum GoldRushError {
+    // General Program Errors (0x1000 - 0x1999)
+    #[msg("Config has already been initialized")]
+    AlreadyInitialized = 0x1000,
+    
+    #[msg("Unauthorized action for this account")]
+    Unauthorized = 0x1001,
+    
+    #[msg("Program is currently paused")]
+    ProgramPaused = 0x1002,
+    
+    #[msg("Program is in emergency pause state")]
+    EmergencyPaused = 0x1003,
+    
+    #[msg("Program is already paused")]
+    AlreadyPaused = 0x1004,
+    
+    #[msg("Program is already active")]
+    AlreadyActive = 0x1005,
+
+    // Configuration Errors (0x2000 - 0x2999)
+    #[msg("Fee basis points must be less than 10000")]
+    InvalidFee = 0x2000,
+    
+    #[msg("Minimum bet amount must be greater than 0")]
+    InvalidMinBetAmount = 0x2001,
+    
+    #[msg("Keeper authorities list cannot be empty")]
+    NoKeeperAuthorities = 0x2002,
+    
+    #[msg("Keeper is not authorized")]
+    UnauthorizedKeeper = 0x2003,
+
+    // Round Management Errors (0x3000 - 0x3999)
+    #[msg("Invalid timestamps: start_time must be less than end_time and in the future")]
+    InvalidTimestamps = 0x3000,
+    
+    #[msg("Round with this ID already exists")]
+    RoundAlreadyExists = 0x3001,
+    
+    #[msg("Invalid round status for this action")]
+    InvalidRoundStatus = 0x3002,
+    
+    #[msg("Round is not ready to be activated yet")]
+    RoundNotReady = 0x3003,
+    
+    #[msg("Round is not in Active status")]
+    RoundNotActive = 0x3004,
+    
+    #[msg("Round has ended, no more bets or withdrawals allowed")]
+    RoundEnded = 0x3005,
+    
+    #[msg("Round has not ended yet")]
+    RoundNotEnded = 0x3006,
+    
+    #[msg("Round is not ready for settlement")]
+    RoundNotReadyForSettlement = 0x3007,
+    
+    #[msg("Asset price must be greater than 0")]
+    InvalidAssetPrice = 0x3008,
+
+    // Betting Errors (0x4000 - 0x4999)
+    #[msg("Bet amount is below minimum required")]
+    BetBelowMinimum = 0x4000,
+    
+    #[msg("Invalid bet status for this action")]
+    InvalidBetStatus = 0x4001,
+    
+    #[msg("Bet did not win, cannot claim reward")]
+    BetNotWon = 0x4002,
+    
+    #[msg("Reward has already been claimed")]
+    AlreadyClaimed = 0x4003,
+    
+    #[msg("No bets have been placed in this round")]
+    NoBetsPlaced = 0x4004,
+
+    // Settlement & Claim Errors (0x5000 - 0x5999)
+    #[msg("Error retrieving price from oracle")]
+    OracleError = 0x5000,
+    
+    #[msg("Settlement process failed")]
+    SettlementFailed = 0x5001,
+    
+    #[msg("Vault has insufficient balance for this operation")]
+    InsufficientVaultBalance = 0x5002,
+    
+    #[msg("Error calculating reward amount")]
+    RewardCalculationError = 0x5003,
+
+    // Account & Token Errors (0x6000 - 0x6999)
+    #[msg("Invalid token account")]
+    InvalidTokenAccount = 0x6000,
+    
+    #[msg("Insufficient balance for this bet")]
+    InsufficientBalance = 0x6001,
+    
+    #[msg("Token mint does not match program configuration")]
+    InvalidMint = 0x6002,
+    
+    #[msg("Token transfer operation failed")]
+    TokenTransferFailed = 0x6003,
+}
+```
