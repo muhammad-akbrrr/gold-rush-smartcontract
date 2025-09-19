@@ -475,19 +475,19 @@ The Gold Rush smart contract charges a fee on each bet to sustain the platform. 
 For each round, the total fee collected is calculated as:
 
 $$
-\text{fee} = \sum_{i=1}^{n} \text{amount}_i \times \frac{\text{fee\_bps}}{10000}
+\text{fee} = \sum_{i=1}^{n} \text{amount}_i \times \frac{\text{fee bps}}{10000}
 $$
 
 Where:
 
 - $n$ = total number of bets in the round  
 - $\text{amount}_i$ = bet amount of the $i$-th bet  
-- $\text{fee\_bps}$ = fee basis points depending on bet type (gold or stock)
+- $\text{fee bps}$ = fee basis points depending on bet type (gold or stock)
 
 The remaining balance after fee deduction becomes the **reward pool**:
 
 $$
-\text{total\_reward\_pool} = \text{total\_pool} - \text{total\_fee\_collected}
+\text{total reward pool} = \text{total pool} - \text{total fee collected}
 $$
 
 - `total_pool` = sum of all bet amounts in the round  
@@ -539,7 +539,7 @@ Weight depends on:
 **General formula for a bet's weight:**
 
 $$
-\text{weight} = \text{amount} \times \text{side\_factor} \times \text{time\_factor}
+\text{weight} = \text{amount} \times \text{side factor} \times \text{time factor}
 $$
 
 Where:
@@ -548,7 +548,7 @@ Where:
 - `side_factor` = multiplier based on `BetSide`
   - Up/Down: `1.0`
   - PercentageChange: `>1.0` depending on the magnitude of percentage
-- `time_factor` = multiplier based on how early the bet was placed (range: $0 < \text{time\_factor} \le 1.0$)
+- `time_factor` = multiplier based on how early the bet was placed (range: $0 < \text{time factor} \le 1.0$)
 
 ### Settlement Process
 
@@ -558,20 +558,20 @@ When the round ends, the **keeper** settles it:
 2. Mark all winning bets as `Won` and sum their weights:
 
 $$
-\text{round.winners\_weight} = \sum_{\text{all winning bets}} \text{bet.weight}
+\text{round winners weight} = \sum_{\text{all winning bets}} \text{bet weight}
 $$
 
 3. Mark all losing bets as `Lost`.
 4. Calculate and transfer fees:
 
 $$
-\text{total\_fee\_collected} = \sum_{i=1}^{n} \text{amount}_i \times \frac{\text{fee\_bps}}{10000}
+\text{total fee collected} = \sum_{i=1}^{n} \text{amount}_i \times \frac{\text{fee bps}}{10000}
 $$
 
 5. Move `total_fee_collected` from round vault to `treasury`.
 6. Update `round.total_reward_pool`:
 $$
-\text{round.total\_reward\_pool} = \text{round.total\_pool} - \text{round.total\_fee\_collected}
+\text{round total reward pool} = \text{round total pool} - \text{round total fee collected}
 $$
 
 > **Note:** At this stage, **no rewards are sent to users yet** — only marking bet results and collecting fees.
@@ -584,7 +584,7 @@ When a user claims their reward:
 2. Calculate the claimable reward:
 
 $$
-\text{reward} = \frac{\text{bet.weight}}{\text{round.winners\_weight}} \times \text{round.total\_reward\_pool}
+\text{reward} = \frac{\text{bet weight}}{\text{round winners weight}} \times \text{round total reward pool}
 $$
 
 3. Transfer the reward from the round vault to the user's account.
@@ -1045,12 +1045,14 @@ Bets placed are stored in the Round Vault and can be canceled before the `end_ti
     - Set `bet.side = direction`
     - Set `bet.status = Pending`
     - Set `bet.claimed = false`
-    - Calculate and set `bet.weight` based on:
-    $$
-    \text{weight} = \text{amount} \times \text{side\_factor} \times \text{time\_factor}
-    $$
     - Set `bet.created_at = Clock::now()`
-3. Update `round` fields:
+    - Calculate and set `bet.weight` based on:
+
+$$
+\text{weight} = \text{amount} \times \text{side factor} \times \text{time factor}
+$$
+
+4. Update `round` fields:
     - Increment `round.total_pool` by `amount`
     - Increment `round.total_bets` by `1`
 
@@ -1140,11 +1142,13 @@ _None_
 
 #### Logic
 1. Calculate reward amount based on:
+
 $$
-\text{reward} = \frac{\text{bet.weight}}{\text{round.winners\_weight}} \times \text{round.total\_reward\_pool}
+\text{reward} = \frac{\text{bet weight}}{\text{round winners weight}} \times \text{round total reward pool}
 $$
-2. Transfer reward `amount` of GRT from `round_vault` to `bettor_token_account`
-3. Update `bet` fields:
+
+3. Transfer reward `amount` of GRT from `round_vault` to `bettor_token_account`
+4. Update `bet` fields:
     - Set `bet.claimed = true`
 
 #### Emits / Side Effects
