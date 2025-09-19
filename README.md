@@ -67,7 +67,7 @@ sequenceDiagram
 
     %% Round creation
     Admin->>Program: create_round(round_id, asset, start_time, end_time, ...)
-    Note right of Program: round.status = Planned
+    Note right of Program: round.status = Scheduled
 
     %% User actions (place / withdraw)
     User->>Program: place_bet(round_id, bet_type, amount)
@@ -87,7 +87,7 @@ sequenceDiagram
 
     %% Admin: cancel round (hard cancel)
     Admin->>Program: cancel_round(round_id)
-    alt round.status in {Planned, Active, PendingSettlement}
+    alt round.status in {Scheduled, Active, PendingSettlement}
       Program-->>Program: for each bet -> refund bet.amount from vault
       Program-->>Treasury: process refunds
       Treasury-->>User: return stake
@@ -342,8 +342,7 @@ stateDiagram-v2
 pub struct Config {
   // --- Authorities ---
   pub admin: Pubkey,                   // The administrator of the contract.
-  pub settlement_authority: Pubkey,    // The authority responsible for settling rounds.
-  pub keeper_authorities: Vec<Pubkey>, // The authority for keeper/oracle accounts allowed to keeper operations.
+  pub keeper_authorities: Vec<Pubkey>, // The authority for keeper accounts allowed to keeper operations.
 
   // --- Token & Treasury ---
   pub token_mint: Pubkey,              // The Gold Rush Token (GRT) used for betting.
@@ -387,7 +386,7 @@ pub struct Round {
   pub market_type: MarketType,   // The type of market (GoldPrice, StockPrice).
 
   // --- State ---
-  pub status: RoundStatus,       // The current status of the round (Planned, Active, PendingSettlement, Ended).
+  pub status: RoundStatus,       // The current status of the round (Scheduled, Active, PendingSettlement, Ended).
   pub locked_price: Option<u64>, // The price when round becomes Active.
   pub final_price: Option<u64>,  // The price when round is settled.
   pub total_pool: u64,           // The total amount of GRT bet in this round.
@@ -405,7 +404,7 @@ pub struct Round {
 // Enum for round status
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
 pub enum RoundStatus {
-    Planned,                    // Created but not started yet
+    Scheduled,                  // Created but not started yet
     Active,                     // Currently accepting bets
     PendingSettlement,          // Ended but settlement failed, needs retry
     Ended,                      // Successfully settled
@@ -646,7 +645,6 @@ Initializes the program for the first time. Creates a `Config` account that stor
 #### Arguments
 | Name            | Type      | Description                          |
 |----------------|------------|-------------------------------------|
-| `settlement_authority` | `Pubkey`   | The initial address of the admin account |
 | `keeper_authorities`   | `Vec<Pubkey>` | List of authorized keeper authority account addresses
 | `token_mint`   | `Pubkey`   | The address of the GRT token mint                 |
 | `treasury`      | `Pubkey`   | The address of the treasury account                 |
@@ -665,7 +663,6 @@ Initializes the program for the first time. Creates a `Config` account that stor
 1. Create the `config` account
 2. Initialize fields:
    - `admin = admin.unwrap_or(initializer.key())`
-   - `settlement_authority = settlement_authority`
    - `keeper_authorities = keeper_authorities`
    - `token_mint = token_mint`
    - `treasury = treasury`
@@ -711,7 +708,6 @@ Allows the admin to update global configuration settings stored in the `Config` 
 | Name                     | Type             | Description                                        |
 |----------------------------|-------------------|-------------------------------------------------------|
 | `new_admin`                | `Option<Pubkey>`    | (Optional) New admin address to replace the current admin. |
-| `settlement_authority`     | `Option<Pubkey>`    | (Optional) New settlement authority address. |
 | `keeper_authorities`       | `Option<Vec<Pubkey>>` | (Optional) New list of keeper authority addresses. |
 | `token_mint`                | `Option<Pubkey>`    | (Optional) New token mint address. |
 | `treasury`                  | `Option<Pubkey>`    | (Optional) New treasury account address. |
@@ -733,7 +729,6 @@ Allows the admin to update global configuration settings stored in the `Config` 
 1. Check that `admin.key() == config.admin`
 2. For each provided argument (`Option<T>`), if `Some(value)` then update the corresponding field in `config`:
    - `admin = new_admin`
-   - `settlement_authority = settlement_authority`
    - `keeper_authorities = keeper_authorities`
    - `token_mint = token_mint`
    - `treasury = treasury`
@@ -853,7 +848,7 @@ Users can only place bets while the round is in Active status.
 #### Context
 | Account             | Type                       | Description                                      |
 |----------------------|------------------------------|---------------------------------------------------|
-| `keeper` | `Signer` | The authorized keeper who creates a new round. |
+| `admin` | `Signer` | The authorized admin who creates a new round. |
 | `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
 | `round` | `Account<Round>` (PDA) | The new round account to be initialized. |
 | `vault` | `AccountInfo` (PDA) | The vault account to hold bets for this round. |
@@ -881,7 +876,7 @@ Users can only place bets while the round is in Active status.
    - `end_time = end_time`
    - `market_type = market_type`
    - `vault = vault.key()`
-   - `status = Planned`
+   - `status = Scheduled`
    - `locked_price = 0`
    - `final_price = None`
    - `total_pool = 0`
@@ -914,7 +909,7 @@ Cancels an active or scheduled round and refunds all bets. Only the admin can pe
 ### Keeper: Start Round
 
 #### Purpose
-This instruction is executed by the Keeper to start a round that was previously in the Planned state.
+This instruction is executed by the Keeper to start a round that was previously in the Scheduled state.
 When called, the round becomes Active, allowing users to place bets (place_bet()).
 
 #### Context
@@ -931,7 +926,7 @@ When called, the round becomes Active, allowing users to place bets (place_bet()
 
 #### Validations
 - `keeper` must be in `config.keeper_authorities`
-- `round.status == Planned`
+- `round.status == Scheduled`
 - `Clock::now() >= round.start_time`
 - `config.status == Active`
 - `asset_price > 0`
@@ -942,14 +937,14 @@ When called, the round becomes Active, allowing users to place bets (place_bet()
 3. Set `round.locked_price = asset_price`
 
 #### Emits / Side Effects
-- Change `Round` status from `Planned` → `Active`
+- Change `Round` status from `Scheduled` → `Active`
 - Indicate that users can now start placing bets (`place_bet()`) on this round
 
 ## Errors
 | Code                  | Meaning                                             |
 |-----------------------------|---------------------------------------------------|
 | `UnauthorizedKeeper` | If `keeper` is not part of `config.keeper_authorities` |
-| `InvalidRoundStatus` | If `round.status` is not `Planned` |
+| `InvalidRoundStatus` | If `round.status` is not `Scheduled` |
 | `RoundNotReady` | If `Clock::now() < round.start_time` |
 | `ProgramPaused` | If `config.status != Active` |
 | `InvalidAssetPrice` | If `asset_price == 0` |
@@ -1009,7 +1004,6 @@ After successful settlement, the round status changes to Ended.
 | `InvalidRoundStatus` | If `round.status` is not `Active` or `PendingSettlement` |
 | `RoundNotReadyForSettlement` | If `Clock::now() < round.end_time` |
 | `ProgramPaused` | If `config.status != Active` |
-| `EmergencyPaused` | If `config.emergency_paused == true` |
 | `NoBetsPlaced` | If `bet_list` is empty |
 
 ---
@@ -1026,6 +1020,8 @@ Bets placed are stored in the Round Vault and can be canceled before the `end_ti
 | `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
 | `round` | `Account<Round>` (PDA) | The round to be settled. |
 | `bet` | `Account<Bet>` (PDA) | The bet account to be initialized. Only one bet can be placed per round. |
+| `round_vault` | `AccountInfo` (PDA) | The vault account holding bets for this round. |
+| `bettor_token_account` | `Account<TokenAccount>` | The token account of the bettor to transfer GRT from. |
 
 #### Arguments
 | Name         | Type      | Description                                      |
@@ -1038,9 +1034,10 @@ Bets placed are stored in the Round Vault and can be canceled before the `end_ti
 - `amount >= config.min_bet_amount`
 - `config.status == Active`
 - `round.status == Active`
+- `round_vault` matches `round.vault`
 
 #### Logic
-1. Transfer `amount` of GRT from `bettor` to `round.vault`
+1. Transfer `amount` of GRT from `bettor_token_account` to `round_vault`
 2. Initialize `bet` fields:
     - Set `bet.user = bettor.key()`
     - Set `bet.round = round.key()`
@@ -1048,7 +1045,10 @@ Bets placed are stored in the Round Vault and can be canceled before the `end_ti
     - Set `bet.side = direction`
     - Set `bet.status = Pending`
     - Set `bet.claimed = false`
-    - Calculate and set `bet.weight` based on amount, side, and time factor
+    - Calculate and set `bet.weight` based on:
+    $$
+    \text{weight} = \text{amount} \times \text{side\_factor} \times \text{time\_factor}
+    $$
     - Set `bet.created_at = Clock::now()`
 3. Update `round` fields:
     - Increment `round.total_pool` by `amount`
@@ -1069,7 +1069,7 @@ Bets placed are stored in the Round Vault and can be canceled before the `end_ti
 
 ### User: Withdraw Bet
 #### Purpose
-This instruction allows the User to **cancel/withdraw their bet** (`withdraw_bet`) from an active round before the round's `end_time` is reached. The bet's funds are refunded back to the User, and the bet is marked as `Canceled`.
+This instruction allows the User to **cancel/withdraw their bet** (`withdraw_bet`) from an active round before the round's `end_time` is reached. The bet's funds are refunded back to the User, and the bet account is closed.
 
 #### Context
 | Field         | Type                    | Description                                         |
@@ -1078,6 +1078,8 @@ This instruction allows the User to **cancel/withdraw their bet** (`withdraw_bet
 | `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
 | `round` | `Account<Round>` (PDA) | The round to be settled. |
 | `bet` | `Account<Bet>` (PDA) | The bet account previously initialized for this round. |
+| `round_vault` | `AccountInfo` (PDA) | The vault account holding bets for this round. |
+| `bettor_token_account` | `Account<TokenAccount>` | The token account of the bettor to transfer GRT from. |
 
 #### Arguments
 _None_
@@ -1088,13 +1090,12 @@ _None_
 - `round.status == Active`
 - `bet.user == bettor.key()`
 - `bet.status == Pending`
+- `round_vault` matches `round.vault`
 
 #### Logic
-1. Transfer `bet.amount` of GRT from `round.vault` back to `bettor`
-2. Update `bet` fields::
-    - Set `bet.status = Canceled`
-3. Close `bet` account to `bettor`
-4. Update `round` fields:
+1. Transfer `bet.amount` of GRT from `round_vault` back to `bettor_token_account`
+2. Close `bet` account and send rent to `bettor`
+3. Update `round` fields:
     - Decrement `round.total_pool` by `amount`
     - Decrement `round.total_bets` by `1`
 
@@ -1124,6 +1125,8 @@ This instruction allows the User to claim their reward (`claim_reward`) if their
 | `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
 | `round` | `Account<Round>` (PDA) | The round to be settled. |
 | `bet` | `Account<Bet>` (PDA) | The bet account previously initialized for this round. |
+| `round_vault` | `AccountInfo` (PDA) | The vault account holding bets for this round. |
+| `bettor_token_account` | `Account<TokenAccount>` | The token account of the bettor to transfer GRT from. |
 
 #### Arguments
 _None_
@@ -1133,13 +1136,14 @@ _None_
 - `bet.user == bettor.key()`
 - `bet.status == Won`
 - `bet.claimed == false`
+- `round_vault` matches `round.vault`
 
 #### Logic
-1. Calculate reward:
+1. Calculate reward amount based on:
 $$
 \text{reward} = \frac{\text{bet.weight}}{\text{round.winners\_weight}} \times \text{round.total\_reward\_pool}
 $$
-2. Transfer reward `amount` of GRT from `round.vault` to `bettor`
+2. Transfer reward `amount` of GRT from `round_vault` to `bettor_token_account`
 3. Update `bet` fields:
     - Set `bet.claimed = true`
 
@@ -1167,12 +1171,14 @@ This program uses Program Derived Addresses (PDA) to create deterministic and pr
 - **Example**: Program ID + ["config"] → Config PDA
 
 ### Round Account  
-- **Seeds**: `["round", round_id]`
+- **Seeds**: `["round", round_id, bettor_pubkey, bet_index]`
 - **Purpose**: Stores round betting information such as asset, start/end time, status, total pool, etc.
-- **Unique**: Yes, one account per round_id
+- **Unique**: No, one account can multiple-bet per round_id
 - **Parameters**:
   - `round_id`: u64 converted to bytes (little-endian)
-- **Example**: Program ID + ["round", 1u64.to_le_bytes()] → Round PDA for round 1
+  - `bettor_pubkey`: Public key of the user making the bet (32 bytes)
+  - `bet_index`: u8 to differentiate multiple bets by the same user in the same round
+- **Example**: Program ID + ["round", 1u64.to_le_bytes(), bettor_pubkey.as_ref(), &bet_index.to_le_bytes()] → Round PDA for round 1
 
 ### Vault Account
 - **Seeds**: `["vault", round_id]`  
@@ -1199,10 +1205,9 @@ let (config_pda, config_bump) = Pubkey::find_program_address(
     &[b"config"],
     program_id
 );
-
-// Round PDA  
+// Round PDA
 let (round_pda, round_bump) = Pubkey::find_program_address(
-    &[b"round", &round_id.to_le_bytes()],
+    &[b"round", &round_id.to_le_bytes(), bettor_pubkey.as_ref(), &bet_index.to_le_bytes()],
     program_id
 );
 
