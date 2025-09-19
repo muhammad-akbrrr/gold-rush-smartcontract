@@ -380,8 +380,8 @@ pub enum ContractStatus {
 pub struct Round {
   // --- Identity ---
   pub id: u64,                   // Unique identifier for the round (incremental from config.current_round_counter).
-  pub asset: Pubkey,             // The asset being bet on (e.g., Gold, Stock).
-  pub start_time: i64,           // The timestampt when round is scheduled to start.
+  pub asset: [u8; 8],             // The asset being bet on (e.g., Gold, Stock) as a fixed-size byte array.
+  pub start_time: i64,           // The timestamp when round is scheduled to start.
   pub end_time: i64,             // The timestamp when round is scheduled to end.
   pub vault: Pubkey,             // The vault account holding the bets for this round.
 
@@ -849,7 +849,72 @@ Pauses emergency deposit and place bet operations. Only the admin can perform th
 Unpauses emergency deposit and place bet operations. Only the admin can perform this action.
 
 ### Admin: Create Round
-Creates a new betting round with specified parameters. Only the admin can perform this action.
+
+#### Purpose
+This instruction is used by the Admin to create and schedule a new round.
+The created round will automatically become active when the start time is reached, and will automatically close (lock) when the end time is reached.
+Users can only place bets while the round is in Active status.
+
+#### Context
+| Account             | Type                       | Description                                      |
+|----------------------|------------------------------|---------------------------------------------------|
+| `keeper` | `Signer` | The authorized keeper who creates a new round. |
+| `config` | `Account<Config>` | The global configuration account, storing common parameters and a list of keepers. |
+| `round` | `Account<Round>` (PDA) | The new round account to be initialized. |
+| `vault` | `AccountInfo` (PDA) | The vault account to hold bets for this round. |
+| `system_program` | `Program<System>` | Solana's built-in system program. |
+
+---
+
+#### Arguments
+| Name               | Type         | Description                                  |
+|----------------------|---------------|-----------------------------------------------|
+| `asset` | `[u8; 8]` | The asset being bet on |
+| `start_time` | `i64` (unix timestamp) | Round start time |
+| `end_time` | `i64` (unix timestamp) | Round end time |
+
+---
+
+#### Validations
+- `start_time < end_time`
+- `start_time > current_timestamp` (cannot create rounds in the past)
+- Caller = `config.admin`
+
+---
+
+#### Logic
+1. Derive PDA for `round` using seeds `["round", round_id]` where `round_id = config.current_round_counter + 1` 
+2. Create round `vault` account to hold bets
+3. Initialize `round` fields:
+   - `round_id = config.current_round_counter + 1`
+   - `asset = asset`
+   - `start_time = start_time`
+   - `end_time = end_time`
+   - `status = Planned`
+   - `locked_price = 0`
+   - `final_price = None`
+   - `total_pool = 0`
+   - `total_bets = 0`
+   - `total_fee_collected = 0`
+   - `total_reward_pool = 0`
+   - `winners_weight = 0`
+   - `created_at = Clock::now()`
+   - `settled_at = None`
+4. Increment `config.current_round_counter` by 1
+---
+
+## Emits / Side Effects
+- Create a new `Round` account on the blockchain
+- Record round information into the program state
+
+---
+
+## Errors
+| Code                         | Meaning                                            |
+|--------------------------------|-------------------------------------------------------|
+| `Unauthorized`                       | If the caller is not the official keeper |
+| `InvalidTimestamps`                  | If `start_time` or `end_time` is invalid |
+| `RoundAlreadyExists`                 | If the PDA for `round_id` has already been created |
 
 ### Admin: Cancel Round
 Cancels an active or scheduled round and refunds all bets. Only the admin can perform this action
