@@ -383,6 +383,7 @@ pub struct Round {
   pub start_time: i64,           // The timestamp when round is scheduled to start.
   pub end_time: i64,             // The timestamp when round is scheduled to end.
   pub vault: Pubkey,             // The vault account holding the bets for this round.
+  pub vault_bump: u8,         // A bump seed for the vault PDA.
   pub market_type: MarketType,   // The type of market (GoldPrice, StockPrice).
 
   // --- State ---
@@ -638,7 +639,7 @@ Initializes the program for the first time. Creates a `Config` account that stor
 #### Context
 | Field            | Type                  | Description                               |
 |------------------|-----------------------|--------------------------------------------|
-| `initializer`    | `Signer`              | The account that initializes the program (becomes admin if `admin` not provided). |
+| `signer`    | `Signer`              | The account that initializes the program (becomes admin if `admin` not provided). |
 | `config`         | `Account<Config>` (PDA)     | PDA account to store global configuration data.         |
 | `system_program` | `Program<System>`     | The system program used to create the `config` account.   |
 
@@ -848,11 +849,12 @@ Users can only place bets while the round is in Active status.
 #### Context
 | Account             | Type                       | Description                                      |
 |----------------------|------------------------------|---------------------------------------------------|
-| `admin` | `Signer` | The authorized admin who creates a new round. |
+| `signer` | `Signer` | The authorized admin who creates a new round. |
 | `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
 | `round` | `Account<Round>` (PDA) | The new round account to be initialized. |
 | `vault` | `AccountInfo` (PDA) | The vault account to hold bets for this round. |
 | `system_program` | `Program<System>` | Solana's built-in system program. |
+| `token_program` | `Program<Token>` | Solana's SPL Token program. |
 
 #### Arguments
 | Name               | Type         | Description                                  |
@@ -863,9 +865,9 @@ Users can only place bets while the round is in Active status.
 | `market_type` | `MarketType` | The type of market (GoldPrice, StockPrice) |
 
 #### Validations
+- Caller = `config.admin`
 - `start_time < end_time`
 - `start_time > current_timestamp` (cannot create rounds in the past)
-- Caller = `config.admin`
 
 #### Logic
 1. Create round `vault` account to hold bets
@@ -877,15 +879,7 @@ Users can only place bets while the round is in Active status.
    - `market_type = market_type`
    - `vault = vault.key()`
    - `status = Scheduled`
-   - `locked_price = 0`
-   - `final_price = None`
-   - `total_pool = 0`
-   - `total_bets = 0`
-   - `total_fee_collected = 0`
-   - `total_reward_pool = 0`
-   - `winners_weight = 0`
    - `created_at = Clock::now()`
-   - `settled_at = None`
 3. Increment `config.current_round_counter` by 1
 
 ## Emits / Side Effects
@@ -1175,22 +1169,20 @@ This program uses Program Derived Addresses (PDA) to create deterministic and pr
 - **Example**: Program ID + ["config"] → Config PDA
 
 ### Round Account  
-- **Seeds**: `["round", round_id, bettor_pubkey, bet_index]`
+- **Seeds**: `["round", round_id]`
 - **Purpose**: Stores round betting information such as asset, start/end time, status, total pool, etc.
 - **Unique**: No, one account can multiple-bet per round_id
 - **Parameters**:
   - `round_id`: u64 converted to bytes (little-endian)
-  - `bettor_pubkey`: Public key of the user making the bet (32 bytes)
-  - `bet_index`: u8 to differentiate multiple bets by the same user in the same round
-- **Example**: Program ID + ["round", 1u64.to_le_bytes(), bettor_pubkey.as_ref(), &bet_index.to_le_bytes()] → Round PDA for round 1
+- **Example**: Program ID + ["round", 1u64.to_le_bytes()] → Round PDA for round 1
 
 ### Vault Account
-- **Seeds**: `["vault", round_id]`  
+- **Seeds**: `["vault", round]`  
 - **Purpose**: Token account that stores all GRT tokens from bets in a single round
 - **Unique**: Yes, one vault per round
 - **Parameters**:
-  - `round_id`: u64 converted to bytes (little-endian)
-- **Example**: Program ID + ["vault", 1u64.to_le_bytes()] → Vault PDA for round 1
+  - `round`: Public key of the round account (32 bytes)
+- **Example**: Program ID + ["vault", round.key().to_bytes().as_ref()] → Vault PDA for round 1
 
 ### Bet Account
 - **Seeds**: `["bet", round_id, bettor_pubkey]`
@@ -1211,19 +1203,19 @@ let (config_pda, config_bump) = Pubkey::find_program_address(
 );
 // Round PDA
 let (round_pda, round_bump) = Pubkey::find_program_address(
-    &[b"round", &round_id.to_le_bytes(), bettor_pubkey.as_ref(), &bet_index.to_le_bytes()],
+    &[b"round", &round_id.to_le_bytes()],
     program_id
 );
 
 // Vault PDA
 let (vault_pda, vault_bump) = Pubkey::find_program_address(
-    &[b"vault", &round_id.to_le_bytes()],
+    &[b"vault", round.key().to_bytes().as_ref()],
     program_id
 );
 
 // Bet PDA
 let (bet_pda, bet_bump) = Pubkey::find_program_address(
-    &[b"bet", &round_id.to_le_bytes(), bettor.key().as_ref()],
+    &[b"bet", &round_id.to_le_bytes(), bettor.key().as_ref(), &bet_index.to_le_bytes()],
     program_id
 );
 ```

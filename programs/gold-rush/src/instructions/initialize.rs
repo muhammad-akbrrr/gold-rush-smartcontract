@@ -38,7 +38,10 @@ impl<'info> Initialize<'info> {
 
         require!(fee_gold_price_bps <= MAX_FEE_BPS, GoldRushError::InvalidFee);
 
-        require!(fee_stock_price_bps <= MAX_FEE_BPS, GoldRushError::InvalidFee);
+        require!(
+            fee_stock_price_bps <= MAX_FEE_BPS,
+            GoldRushError::InvalidFee
+        );
 
         require!(min_bet_amount > 0, GoldRushError::InvalidMinBetAmount);
 
@@ -74,8 +77,6 @@ pub fn handler(
     config.fee_stock_price_bps = fee_stock_price_bps;
     config.min_bet_amount = min_bet_amount;
     config.status = ContractStatus::Active;
-    config.current_round_counter = 0;
-    config.version = 0;
     config.bump = ctx.bumps.config;
 
     Ok(())

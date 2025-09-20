@@ -1,0 +1,87 @@
+use crate::{constants::*, error::GoldRushError, state::*};
+use anchor_lang::prelude::*;
+use anchor_spl::token::{Mint, Token, TokenAccount};
+
+#[derive(Accounts)]
+pub struct CreateRound<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    #[account(
+        seeds = [CONFIG_SEED.as_bytes()],
+        bump
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        init,
+        payer = signer,
+        space = DISRIMINATOR_SIZE as usize + Round::INIT_SPACE,
+        seeds = [ROUND_SEED.as_bytes(), &(config.current_round_counter + 1).to_le_bytes()],
+        bump
+    )]
+    pub round: Account<'info, Round>,
+
+    #[account(
+        init,
+        payer = signer,
+        token::mint = mint,
+        token::authority = round,
+        seeds = [VAULT_SEED.as_bytes(), round.key().as_ref()],
+        bump
+    )]
+    pub vault: Account<'info, TokenAccount>,
+
+    pub mint: Account<'info, Mint>,
+
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+}
+
+impl<'info> CreateRound<'info> {
+    pub fn validate(&self, start_time: i64, end_time: i64) -> Result<()> {
+        require!(
+            self.signer.key() == self.config.admin,
+            GoldRushError::Unauthorized
+        );
+
+        require!(start_time < end_time, GoldRushError::InvalidTimestamps);
+
+        require!(
+            start_time > Clock::get()?.unix_timestamp,
+            GoldRushError::InvalidTimestamps
+        );
+
+        Ok(())
+    }
+}
+
+pub fn handler(
+    ctx: Context<CreateRound>,
+    asset: [u8; 8],
+    market_type: MarketType,
+    start_time: i64,
+    end_time: i64,
+) -> Result<()> {
+    // validate
+    ctx.accounts.validate(start_time, end_time)?;
+
+    let config = &ctx.accounts.config;
+    let round = &mut ctx.accounts.round;
+
+    let round_id = config.current_round_counter + 1;
+
+    // set fields
+    round.id = round_id;
+    round.asset = asset;
+    round.start_time = start_time;
+    round.end_time = end_time;
+    round.vault = ctx.accounts.vault.key();
+    round.vault_bump = ctx.bumps.vault;
+    round.market_type = market_type;
+    round.status = RoundStatus::Scheduled;
+    round.created_at = Clock::get()?.unix_timestamp;
+    round.bump = ctx.bumps.round;
+
+    Ok(())
+}

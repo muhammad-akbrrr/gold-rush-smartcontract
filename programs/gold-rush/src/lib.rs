@@ -37,4 +37,14 @@ pub mod gold_rush {
             min_bet_amount,
         )
     }
+
+    pub fn create_round(
+        ctx: Context<CreateRound>,
+        asset: [u8; 8],
+        market_type: MarketType,
+        start_time: i64,
+        end_time: i64,
+    ) -> Result<()> {
+        create_round::handler(ctx, asset, market_type, start_time, end_time)
+    }
 }
