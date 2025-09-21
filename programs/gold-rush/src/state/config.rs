@@ -20,6 +20,11 @@ pub struct Config {
     // --- Betting Rules ---
     pub min_bet_amount: u64, // The minimum bet amount.
 
+    // --- Reward Calculations ---
+    pub min_time_factor_bps: u64, // The minimum time factor in basis points.
+    pub max_time_factor_bps: u64, // The maximum time factor in basis points.
+    pub default_direction_factor_bps: u64, // The default direction factor in basis points.
+
     // --- Global State ---
     pub status: ContractStatus, // Overall contract status (Active / Paused / EmergencyPaused)
     pub current_round_counter: u64, // Incremental counter for new round IDs

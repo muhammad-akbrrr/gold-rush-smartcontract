@@ -36,10 +36,10 @@ pub enum MarketType {
 
 /// Enum for bet types
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace)]
-pub enum BetSide {
+pub enum BetDirection {
     Up,
     Down,
-    PercentageChange(i16), // e.g., 10 for 0.1%, -25 for -0.25%
+    PercentageChangeBps(i16), // e.g., 10 for 0.1%, -25 for -0.25%
 }
 
 /// Enum for bet status
@@ -53,8 +53,8 @@ pub enum BetStatus {
 /// Spaces
 pub const DISRIMINATOR_SIZE: u8 = 8;
 
-/// Fee
-pub const MAX_FEE_BPS: u16 = 10_000;
+/// Maths
+pub const HUNDRED_PERCENT_BPS: u16 = 10_000;
 
 /// Authority
 pub const MAX_KEEPER_AUTHORITIES: usize = 5;

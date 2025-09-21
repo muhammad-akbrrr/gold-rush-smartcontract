@@ -21,7 +21,7 @@ pub struct Initialize<'info> {
 impl<'info> Initialize<'info> {
     pub fn validate(
         &self,
-        keeper_authorities: Vec<Pubkey>,
+        keeper_authorities: &Vec<Pubkey>,
         fee_gold_price_bps: u16,
         fee_stock_price_bps: u16,
         min_bet_amount: u64,
@@ -36,10 +36,13 @@ impl<'info> Initialize<'info> {
             GoldRushError::InvalidKeeperAuthorities
         );
 
-        require!(fee_gold_price_bps <= MAX_FEE_BPS, GoldRushError::InvalidFee);
+        require!(
+            fee_gold_price_bps <= HUNDRED_PERCENT_BPS,
+            GoldRushError::InvalidFee
+        );
 
         require!(
-            fee_stock_price_bps <= MAX_FEE_BPS,
+            fee_stock_price_bps <= HUNDRED_PERCENT_BPS,
             GoldRushError::InvalidFee
         );
 
@@ -57,10 +60,13 @@ pub fn handler(
     fee_gold_price_bps: u16,
     fee_stock_price_bps: u16,
     min_bet_amount: u64,
+    min_time_factor_bps: u64,
+    max_time_factor_bps: u64,
+    default_direction_factor_bps: u64,
 ) -> Result<()> {
     // validate
     ctx.accounts.validate(
-        keeper_authorities.clone(),
+        &keeper_authorities,
         fee_gold_price_bps,
         fee_stock_price_bps,
         min_bet_amount,
@@ -76,6 +82,9 @@ pub fn handler(
     config.fee_gold_price_bps = fee_gold_price_bps;
     config.fee_stock_price_bps = fee_stock_price_bps;
     config.min_bet_amount = min_bet_amount;
+    config.min_time_factor_bps = min_time_factor_bps;
+    config.max_time_factor_bps = max_time_factor_bps;
+    config.default_direction_factor_bps = default_direction_factor_bps;
     config.status = ContractStatus::Active;
     config.bump = ctx.bumps.config;
 

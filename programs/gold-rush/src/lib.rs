@@ -5,6 +5,7 @@ pub mod constants;
 pub mod error;
 pub mod instructions;
 pub mod state;
+pub mod utils;
 
 use anchor_lang::prelude::*;
 
@@ -26,6 +27,9 @@ pub mod gold_rush {
         fee_gold_price_bps: u16,
         fee_stock_price_bps: u16,
         min_bet_amount: u64,
+        min_time_factor_bps: u64,
+        max_time_factor_bps: u64,
+        default_direction_factor_bps: u64,
     ) -> Result<()> {
         initialize::handler(
             ctx,
@@ -35,6 +39,9 @@ pub mod gold_rush {
             fee_gold_price_bps,
             fee_stock_price_bps,
             min_bet_amount,
+            min_time_factor_bps,
+            max_time_factor_bps,
+            default_direction_factor_bps,
         )
     }
 
@@ -49,5 +56,9 @@ pub mod gold_rush {
 
     pub fn start_round(ctx: Context<StartRound>, asset_price: u64) -> Result<()> {
         start_round::handler(ctx, asset_price)
+    }
+
+    pub fn place_bet(ctx: Context<PlaceBet>, amount: u64, direction: BetDirection) -> Result<()> {
+        place_bet::handler(ctx, amount, direction)
     }
 }

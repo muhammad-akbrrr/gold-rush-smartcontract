@@ -428,7 +428,7 @@ pub struct Bet {
 
   // --- Bet Info ---
   pub amount: u64,            // The amount of GRT bet.
-  pub side: BetSide,          // The type of bet (Up, Down, PercentageChange).
+  pub direction: BetDirection,          // The type of bet (Up, Down, PercentageChangeBps).
   pub claimed: bool,          // Whether the reward has been claimed.
   pub weight: u64,            // The weight of the bet (for reward calculation).
 
@@ -442,10 +442,10 @@ pub struct Bet {
 
 // Enum for bet types
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
-pub enum BetSide {
+pub enum BetDirection {
     Up,
     Down,
-    PercentageChange(i16),   // e.g., 10 for 0.1%, -25 for -0.25%
+    PercentageChangeBps(i16),   // e.g., 10 for 0.1%, -25 for -0.25%
 }
 
 // Enum for bet status
@@ -534,22 +534,73 @@ Each bet has a **weight** that represents its contribution to the reward pool.
 Weight depends on:
 
 1. **Bet Amount** — Larger bets contribute more.
-2. **Bet Type Factor** — Bets on `PercentageChange` may carry a higher factor than simple `Up/Down` bets.
+2. **Bet Type Factor** — Depends on the type of asset:
+   - **Gold** → uses a **non-linear scaling** (small changes in gold price may still give significant weight adjustments).
+   - **Stock** → uses a **linear scaling** (reward grows proportionally with the price change).
 3. **Time Factor** — Bets placed earlier in the round may carry a higher weight than bets placed near the end of the round.
+
 
 **General formula for a bet's weight:**
 
 $$
-\text{weight} = \text{amount} \times \text{side factor} \times \text{time factor}
+\text{weight} = \text{amount} \times \text{direction factor} \times \text{time factor}
 $$
 
 Where:
 
-- `amount` = number of GRT tokens bet (before fees)
-- `side_factor` = multiplier based on `BetSide`
-  - Up/Down: `1.0`
-  - PercentageChange: `>1.0` depending on the magnitude of percentage
+- `amount` = number of GRT tokens bet (before fees)  
+- `direction_factor` = multiplier based on `BetDirection` and `BetType`:
+  - Stock (linear): proportional to change, e.g., Up/Down = `1.0`, PercentageChangeBps = value depending on % change  
+  - Gold (non-linear): scaling factor that can amplify small % changes into larger weight multipliers  
 - `time_factor` = multiplier based on how early the bet was placed (range: $0 < \text{time factor} \le 1.0$)
+
+### Linear vs Non-Linear Factors
+
+The system supports both **linear** and **non-linear** factor models depending on the game type.
+
+#### 1. Direction Factor
+
+- **Stock (Linear)**
+  The factor grows **proportionally** with the chosen percentage change.
+  Example:  
+  - Up/Down = `1.0`
+  - +5% change = `1.05`
+  - +10% change = `1.10`
+
+- **Gold (Non-Linear)**
+  The factor grows **faster than linear**, emphasizing higher percentage changes.  
+  Example (quadratic growth):
+  - Up/Down = `1.0`
+  - +5% change = `1.25` (instead of 1.05)
+  - +10% change = `2.0` (instead of 1.10)
+
+This ensures that even small gold changes may yield competitive rewards due to exponential scaling.
+
+#### 2. Time Factor
+
+- **Stock (Linear)**  
+  Earlier bets get proportionally more weight.  
+  Example (normalized by round duration):  
+
+  $$
+  \text{time factor} = 1 - \frac{\text{time elapsed}}{\text{round duration}}
+  $$  
+
+  If placed at the very start → `1.0`  
+  If placed halfway → `0.5`  
+  If placed at the end → close to `0.0`  
+
+- **Gold (Non-Linear)**  
+  Earlier bets are rewarded **more aggressively**.  
+  Example (quadratic decay):  
+
+  $$
+  \text{time factor} = \left(1 - \frac{\text{time elapsed}}{\text{round duration}}\right)^2
+  $$
+
+  If placed at the very start → `1.0`
+  If placed halfway → `0.25`
+  If placed at the end → close to `0.0`
 
 ### Settlement Process
 
@@ -571,6 +622,7 @@ $$
 
 5. Move `total_fee_collected` from round vault to `treasury`.
 6. Update `round.total_reward_pool`:
+
 $$
 \text{round total reward pool} = \text{round total pool} - \text{round total fee collected}
 $$
@@ -603,35 +655,48 @@ $$
 
 ### Example Calculation
 
-| User | Amount (GRT) | Bet Type | Fee (bps)   | Time Factor | Weight |
-|------|--------------|----------|-------------|-------------|--------|
-| A    | 10           | Gold     | 50          |    1.0      | 10     |
-| B    | 20           | Stock    | 100         |    1.0      | 20     |
+#### Case 1: **Gold Round** (Non-Linear)
 
-- Total pool: $10 + 20 = 30$
-- Fees:
-  - A → $10 \times 0.005 = 0.05$ GRT
-  - B → $20 \times 0.01 = 0.2$ GRT
-- Total fee collected = $0.05 + 0.2 = 0.25$ GRT
-- Total reward pool = $30 - 0.25 = 29.75$ GRT
-- Suppose both A and B win:
-  - `round.winners_weight = 10 + 20 = 30`
+| User | Amount (GRT) | Direction | Fee (bps) | Time Factor | Direction Factor | Weight |
+|------|--------------|-----------|-----------|-------------|------------------|--------|
+| A    | 10           | +5%       | 50        | 1.0         | 1.25             | 12.5   |
+| B    | 20           | +10%      | 50        | 0.5² = 0.25 | 2.0              | 10.0   |
 
-Then:
+- Total pool = $10 + 20 = 30$  
+- Fees:  
+  - A → $10 \times 0.005 = 0.05$ GRT  
+  - B → $20 \times 0.005 = 0.10$ GRT  
+- Total fee collected = 0.15 GRT  
+- Reward pool = 29.85 GRT  
+- Winners weight = 12.5 + 10.0 = 22.5  
 
-$$
-\text{Reward A} = \frac{10}{30} \times 29.75 \approx 9.92\text{ GRT}
-$$
-$$
-\text{Reward B} = \frac{20}{30} \times 29.75 \approx 19.83\text{ GRT}
-$$
+Rewards:  
+- A = $(12.5 / 22.5) \times 29.85 \approx 16.58$ GRT  
+- B = $(10 / 22.5) \times 29.85 \approx 13.27$ GRT  
 
-Total = 29.75 GRT distributed, and 0.25 GRT sent to the treasury.
+#### Case 2: **Stock Round** (Linear)
+
+| User | Amount (GRT) | Direction | Fee (bps) | Time Factor | Direction Factor | Weight |
+|------|--------------|-----------|-----------|-------------|------------------|--------|
+| A    | 10           | +5%       | 100       | 1.0         | 1.05             | 10.5   |
+| B    | 20           | +10%      | 100       | 0.5         | 1.10             | 11.0   |
+
+- Total pool = $10 + 20 = 30$  
+- Fees:  
+  - A → $10 \times 0.01 = 0.10$ GRT  
+  - B → $20 \times 0.01 = 0.20$ GRT  
+- Total fee collected = 0.30 GRT  
+- Reward pool = 29.70 GRT  
+- Winners weight = 10.5 + 11.0 = 21.5  
+
+Rewards:  
+- A = $(10.5 / 21.5) \times 29.70 \approx 14.49$ GRT  
+- B = $(11 / 21.5) \times 29.70 \approx 15.21$ GRT  
 
 ---
 
-
 ## Program Instructions
+
 ### Initialize
 #### Purpose
 Initializes the program for the first time. Creates a `Config` account that stores global settings such as admin, treasury, and other initial parameters.
@@ -909,7 +974,7 @@ When called, the round becomes Active, allowing users to place bets (place_bet()
 #### Context
 | Field         | Type                  | Description                                |
 |-------------------|-----------------------|----------------------------------------------|
-| `keeper` | `Signer` | The keeper authorized to trigger the start of the round. |
+| `signer` | `Signer` | The keeper authorized to trigger the start of the round. |
 | `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
 | `round` | `Account<Round>` (PDA) | The round currently in `Scheduled` status. |
 
@@ -936,10 +1001,10 @@ When called, the round becomes Active, allowing users to place bets (place_bet()
 ## Errors
 | Code                  | Meaning                                             |
 |-----------------------------|---------------------------------------------------|
-| `UnauthorizedKeeper` | If `keeper` is not part of `config.keeper_authorities` |
+| `ProgramPaused` | If `config.status != Active` |
+| `UnauthorizedKeeper` | If `signer` is not part of `config.keeper_authorities` |
 | `InvalidRoundStatus` | If `round.status` is not `Scheduled` |
 | `RoundNotReady` | If `Clock::now() < round.start_time` |
-| `ProgramPaused` | If `config.status != Active` |
 | `InvalidAssetPrice` | If `asset_price == 0` |
 
 ---
@@ -1009,7 +1074,7 @@ Bets placed are stored in the Round Vault and can be canceled before the `end_ti
 #### Context
 | Field         | Type                    | Description                                         |
 |-------------------|----------------------------|----------------------------------------------------------|
-| `bettor` | `Signer` | The address of the player placing the bet. |
+| `signer` | `Signer` | The address of the player placing the bet. |
 | `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
 | `round` | `Account<Round>` (PDA) | The round to be settled. |
 | `bet` | `Account<Bet>` (PDA) | The bet account to be initialized. Only one bet can be placed per round. |
@@ -1020,29 +1085,28 @@ Bets placed are stored in the Round Vault and can be canceled before the `end_ti
 | Name         | Type      | Description                                      |
 |---------------|---------------|-------------------------------------------------|
 | `amount` | `u64` | The number of tokens wagered. |
-| `direction` | `enum` | `BetSide` enum |
+| `direction` | `enum` | `BetDirection` enum |
 
 #### Validations
-- `Clock::now() < round.end_time`
-- `amount >= config.min_bet_amount`
 - `config.status == Active`
 - `round.status == Active`
-- `round_vault` matches `round.vault`
+- `Clock::now() < round.end_time`
+- `amount >= config.min_bet_amount`
 
 #### Logic
 1. Transfer `amount` of GRT from `bettor_token_account` to `round_vault`
 2. Initialize `bet` fields:
-    - Set `bet.user = bettor.key()`
+    - Set `bet.user = signer.key()`
     - Set `bet.round = round.key()`
     - Set `bet.amount = amount`
-    - Set `bet.side = direction`
+    - Set `bet.direction = direction`
     - Set `bet.status = Pending`
     - Set `bet.claimed = false`
     - Set `bet.created_at = Clock::now()`
     - Calculate and set `bet.weight` based on:
 
 $$
-\text{weight} = \text{amount} \times \text{side factor} \times \text{time factor}
+\text{weight} = \text{amount} \times \text{direction factor} \times \text{time factor}
 $$
 
 4. Update `round` fields:
@@ -1184,13 +1248,14 @@ This program uses Program Derived Addresses (PDA) to create deterministic and pr
 - **Example**: Program ID + ["vault", round.key().to_bytes().as_ref()] → Vault PDA for round 1
 
 ### Bet Account
-- **Seeds**: `["bet", round_id, bettor_pubkey]`
+- **Seeds**: `["bet", round, signer, bet_index]`
 - **Purpose**: Stores individual user bet information for a specific round
 - **Unique**: Yes, one bet per user per round
 - **Parameters**:
-  - `round_id`: u64 converted to bytes (little-endian)  
-  - `bettor_pubkey`: Public key of the user making the bet (32 bytes)
-- **Example**: Program ID + ["bet", 1u64.to_le_bytes(), user_pubkey] → Bet PDA for user in round 1
+  - `round`: Public key of the round account (32 bytes)
+  - `signer`: Public key of the user making the bet (32 bytes)
+  - `bet_index`: u64 converted to bytes (little-endian) to allow multiple bets per user per round
+- **Example**: Program ID + ["bet", round.key().to_bytes().as_ref(), signer.key().as_ref(), &bet_index.to_le_bytes()] → Bet PDA for user in round 1
 
 ### Rust Implementation
 
@@ -1214,7 +1279,7 @@ let (vault_pda, vault_bump) = Pubkey::find_program_address(
 
 // Bet PDA
 let (bet_pda, bet_bump) = Pubkey::find_program_address(
-    &[b"bet", &round_id.to_le_bytes(), bettor.key().as_ref(), &bet_index.to_le_bytes()],
+    &[b"bet", round.key().as_ref(), signer.key().as_ref(), &bet_index.to_le_bytes()],
     program_id
 );
 ```

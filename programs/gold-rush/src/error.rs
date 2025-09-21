@@ -62,6 +62,9 @@ pub enum GoldRushError {
     #[msg("Asset price must be greater than 0")]
     InvalidAssetPrice = 0x3008,
 
+    #[msg("Round duration is invalid")]
+    InvalidDuration = 0x3009,
+
     // Betting Errors (0x4000 - 0x4999)
     #[msg("Bet amount is below minimum required")]
     BetBelowMinimum = 0x4000,
@@ -103,4 +106,10 @@ pub enum GoldRushError {
 
     #[msg("Token transfer operation failed")]
     TokenTransferFailed = 0x6003,
+
+    // Math Errors (0x7000 - 0x7999)
+    #[msg("Mathematical overflow detected.")]
+    Overflow = 0x7000,
+    #[msg("Mathematical underflow detected.")]
+    Underflow = 0x7001,
 }
