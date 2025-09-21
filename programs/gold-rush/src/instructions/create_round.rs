@@ -58,7 +58,6 @@ impl<'info> CreateRound<'info> {
 
 pub fn handler(
     ctx: Context<CreateRound>,
-    asset: [u8; 8],
     market_type: MarketType,
     start_time: i64,
     end_time: i64,
@@ -73,7 +72,6 @@ pub fn handler(
 
     // set fields
     round.id = round_id;
-    round.asset = asset;
     round.start_time = start_time;
     round.end_time = end_time;
     round.vault = ctx.accounts.vault.key();

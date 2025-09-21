@@ -919,16 +919,15 @@ When called, the round becomes Active, allowing users to place bets (place_bet()
 | `asset_price` | `u64` | The price of the asset being staked. |
 
 #### Validations
+- `config.status == Active`
 - `keeper` must be in `config.keeper_authorities`
 - `round.status == Scheduled`
 - `Clock::now() >= round.start_time`
-- `config.status == Active`
 - `asset_price > 0`
 
 #### Logic
 1. Change `round.status` to `Active`
-2. Set `round.settled_at = Clock::now()`
-3. Set `round.locked_price = asset_price`
+2. Set `round.locked_price = asset_price`
 
 #### Emits / Side Effects
 - Change `Round` status from `Scheduled` → `Active`

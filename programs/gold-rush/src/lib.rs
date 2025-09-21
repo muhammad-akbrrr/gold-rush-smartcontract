@@ -40,11 +40,14 @@ pub mod gold_rush {
 
     pub fn create_round(
         ctx: Context<CreateRound>,
-        asset: [u8; 8],
         market_type: MarketType,
         start_time: i64,
         end_time: i64,
     ) -> Result<()> {
-        create_round::handler(ctx, asset, market_type, start_time, end_time)
+        create_round::handler(ctx, market_type, start_time, end_time)
+    }
+
+    pub fn start_round(ctx: Context<StartRound>, asset_price: u64) -> Result<()> {
+        start_round::handler(ctx, asset_price)
     }
 }

@@ -6,7 +6,6 @@ use anchor_lang::prelude::*;
 pub struct Round {
     // --- Identity ---
     pub id: u64, // Unique identifier for the round (incremental from config.current_round_counter).
-    pub asset: [u8; 8], // The asset being bet on (e.g., Gold, Stock) as a fixed-size byte array.
     pub start_time: i64, // The timestamp when round is scheduled to start.
     pub end_time: i64, // The timestamp when round is scheduled to end.
     pub vault: Pubkey, // The vault account holding the bets for this round.
