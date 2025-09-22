@@ -124,6 +124,7 @@ pub fn handler(ctx: Context<PlaceBet>, amount: u64, direction: BetDirection) -> 
         .ok_or(GoldRushError::Underflow)?;
 
     // set bet fields
+    bet.id = round.total_bets + 1;
     bet.round = round.key();
     bet.bettor = ctx.accounts.signer.key();
     bet.amount = amount;

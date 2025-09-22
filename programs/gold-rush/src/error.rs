@@ -34,6 +34,18 @@ pub enum GoldRushError {
     #[msg("Keeper is not authorized")]
     UnauthorizedKeeper = 0x2003,
 
+    #[msg("Invalid time factor: min and max must be between 0 and 10000")]
+    InvalidTimeFactorConfig = 0x2004,
+
+    #[msg("Minimum time factor must be less than or equal to maximum time factor")]
+    InvalidTimeFactorRange = 0x2005,
+
+    #[msg("Direction factor must be between 0 and 10000")]
+    InvalidDirectionFactorConfig = 0x2006,
+
+    #[msg("Treasury authority does not match config")]
+    InvalidTreasuryAuthority = 0x2007,
+
     // Round Management Errors (0x3000 - 0x3999)
     #[msg("Invalid timestamps: start_time must be less than end_time and in the future")]
     InvalidTimestamps = 0x3000,
@@ -93,6 +105,21 @@ pub enum GoldRushError {
 
     #[msg("Error calculating reward amount")]
     RewardCalculationError = 0x5003,
+
+    #[msg("Invalid number of bettors provided")]
+    InvalidBettorsLength = 0x5004,
+
+    #[msg("Invalid bet account provided")]
+    InvalidBetAccount = 0x5005,
+
+    #[msg("Invalid bet account data provided")]
+    InvalidBetAccountData = 0x5006,
+
+    #[msg("Serialization or deserialization error")]
+    SerializeError = 0x5007,
+
+    #[msg("Account data is too small for this operation")]
+    AccountDataTooSmall = 0x5008,
 
     // Account & Token Errors (0x6000 - 0x6999)
     #[msg("Invalid token account")]

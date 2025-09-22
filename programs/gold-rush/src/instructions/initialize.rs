@@ -25,6 +25,9 @@ impl<'info> Initialize<'info> {
         fee_gold_price_bps: u16,
         fee_stock_price_bps: u16,
         min_bet_amount: u64,
+        min_time_factor_bps: u64,
+        max_time_factor_bps: u64,
+        default_direction_factor_bps: u64,
     ) -> Result<()> {
         require!(
             keeper_authorities.len() > 0,
@@ -48,6 +51,26 @@ impl<'info> Initialize<'info> {
 
         require!(min_bet_amount > 0, GoldRushError::InvalidMinBetAmount);
 
+        require!(
+            (0..=HUNDRED_PERCENT_BPS as u64).contains(&min_time_factor_bps),
+            GoldRushError::InvalidTimeFactorConfig
+        );
+
+        require!(
+            (0..=HUNDRED_PERCENT_BPS as u64).contains(&max_time_factor_bps),
+            GoldRushError::InvalidTimeFactorConfig
+        );
+
+        require!(
+            (0..=HUNDRED_PERCENT_BPS as u64).contains(&default_direction_factor_bps),
+            GoldRushError::InvalidDirectionFactorConfig
+        );
+
+        require!(
+            min_time_factor_bps <= max_time_factor_bps,
+            GoldRushError::InvalidTimeFactorRange
+        );
+
         Ok(())
     }
 }
@@ -70,6 +93,9 @@ pub fn handler(
         fee_gold_price_bps,
         fee_stock_price_bps,
         min_bet_amount,
+        min_time_factor_bps,
+        max_time_factor_bps,
+        default_direction_factor_bps,
     )?;
 
     let config = &mut ctx.accounts.config;

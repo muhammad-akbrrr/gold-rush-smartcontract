@@ -5,6 +5,7 @@ use anchor_lang::prelude::*;
 #[derive(InitSpace)]
 pub struct Bet {
     // --- Identify ---
+    pub id: u64,        // The unique identifier of the bet.
     pub round: Pubkey,  // The round this bet is associated with.
     pub bettor: Pubkey, // The address of the player placing the bet.
 

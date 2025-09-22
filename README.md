@@ -717,6 +717,9 @@ Initializes the program for the first time. Creates a `Config` account that stor
 | `fee_gold_price_bps`       | `u16`      | The fee for gold price bets in basis points (bps) |
 | `fee_stock_price_bps`      | `u16`      | The fee for stock price bets in basis points (bps) |
 | `min_bet_amount` | `u64`      | The minimum amount required to place a bet    |
+| `min_time_factor_bps` | `u16`      | The minimum time factor in basis points (bps) (e.g., 5000 for 0.5) |
+| `max_time_factor_bps` | `u16`      | The maximum time factor in basis points (bps) (e.g., 10000 for 1.0) |
+| `default_time_factor_bps` | `u16`      | The default time factor in basis points (bps) (e.g., 7500 for 0.75) |
 
 #### Validations
 - Ensure `config` has not been initialized (no previous data exists)
@@ -724,6 +727,8 @@ Initializes the program for the first time. Creates a `Config` account that stor
 - `initializer` must be a signer
 - `keeper_authorities` must not be empty
 - `min_bet_amount` must be greater than `0`
+- `min_time_factor_bps`, `max_time_factor_bps`, and `default_time_factor_bps` must be between `0` and `10_000`
+- `min_time_factor_bps <= max_time_factor_bps`
 
 #### Logic
 1. Create the `config` account

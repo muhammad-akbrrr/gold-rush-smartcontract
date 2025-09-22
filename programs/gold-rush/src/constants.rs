@@ -48,6 +48,7 @@ pub enum BetStatus {
     Pending,
     Won,
     Lost,
+    Draw,
 }
 
 /// Spaces
@@ -56,5 +57,7 @@ pub const DISRIMINATOR_SIZE: u8 = 8;
 /// Maths
 pub const HUNDRED_PERCENT_BPS: u16 = 10_000;
 
-/// Authority
+/// Limits
 pub const MAX_KEEPER_AUTHORITIES: usize = 5;
+pub const MAX_BETS_SETTLE: usize = 20;
+
