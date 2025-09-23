@@ -935,6 +935,7 @@ Users can only place bets while the round is in Active status.
 | `market_type` | `MarketType` | The type of market (GoldPrice, StockPrice) |
 
 #### Validations
+- `config.status == Active`
 - Caller = `config.admin`
 - `start_time < end_time`
 - `start_time > current_timestamp` (cannot create rounds in the past)
@@ -1017,57 +1018,83 @@ When called, the round becomes Active, allowing users to place bets (place_bet()
 ### Keeper: Settle Round
 
 #### Purpose
-This instruction is executed by the Keeper to perform settlement on a round that has reached its end_time.
-The settlement process retrieves the final price from the oracle, determines the winner and loser, calculates the winners_weight, and marks all bets as either Won or Lost.
-After successful settlement, the round status changes to Ended.
+This instruction is executed by the Keeper to settle a round that has reached its end_time.
+The settlement process includes:
+- Retrieving the final price (`final_price`) from the oracle
+- Determining the winner and loser
+- Calculating the `winners_weight`
+- Changing the status of each bet to `Won`, `Lost`, or `Draw`
+- Collecting fees for the treasury
+
+Upon successful settlement, the round status changes to **Ended**.
 
 #### Context
 | Field         | Type                    | Description                                         |
 |-------------------|----------------------------|----------------------------------------------------------|
-| `keeper` | `Signer` | The keeper authorized to trigger settlement. |
-| `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
+| `signer` / `keeper` | `Signer` | The keeper authorized to execute settlements. |
+| `config` | `Account<Config>` (PDA) | Stores global configuration data (status, fee bps, keeper list, treasury). |
 | `round` | `Account<Round>` (PDA) | The round to be settled. |
-| `bet_list` | `Vec<Account<Bet>>` (PDA) | All bets associated with this round. |
+| `round_vault` | `Account<TokenAccount>` (PDA) | The token vault for the round. |
+| `treasury` | `UncheckedAccount` | The treasury pubkey specified in config. |
+| `treasury_token_account` | `Account<TokenAccount>` (ATA) | The treasury ATA for receiving fees. |
+| `mint` | `Account<Mint>` | Mint token used for betting. |
+| `token_program` | `Program<Token>` | SPL Token program. |
+| `associated_token_program` | `Program<AssociatedToken>` | Program to create an ATA treasury if it doesn't already exist. |
+| `system_program` | `Program<System>` | System program. |
+| `remaining_accounts` | `Vec<AccountInfo>` | List of all bets (`Bet` PDA) associated with this round.
 
 #### Arguments
 | Name         | Type      | Description                                      |
 |---------------|---------------|-------------------------------------------------|
-| **asset_price**      | `u64`                   | The price of the asset being settled. |
+| **asset_price** | `u64` | The final asset price used for settlement. |
 
 ## Validations
-- `keeper` must be present in `config.keeper_authorities`
+- `signer` must be in `config.keeper_authorities`
+- `config.status == Active`
 - `round.status` must be `Active` or `PendingSettlement`
 - `Clock::now() >= round.end_time`
-- `config.status == Active`
-- `bet_list` cannot be empty
+- `remaining_accounts.len() <= MAX_BETS_SETTLE`
 
 ## Logic
-1. if `final_price` is not provided (0) set `round.status = PendingSettlement` and return (keeper will retry later).
-2. Otherwise, proceed with settlement:
-    - Set `round.final_price = final_price`
-    - Calculate the result of each `bet`:
-      - If the prediction is correct → `bet.status = Won`
-      - If the prediction is incorrect → `bet.status = Lost`
-    - Calculate and set `winners_weight` based on the total number of tokens won
-    - Calculate total fees and set to `round.total_fee_collected`
-    - Transfer `round.total_fee_collected` from `round.vault` to `config.treasury`
-    - Set `round.total_reward_pool = round.total_pool - round.total_fee_collected`
-    - Change `round.status = Ended`
-    - Set `round.settled_at = Clock::now()`.
+1. If `asset_price == 0`:
+    - Change `round.status = PendingSettlement`
+    - Return (keeper will retry later)
+2. If `asset_price > 0`:
+    - Set `round.final_price = asset_price`
+    - Calculate the price difference: `asset_price - round.locked_price`
+    - For each bet in `remaining_accounts`:
+      - Validate the PDA bet
+      - Determine the bet result with `is_bet_winner`
+        - **True** → `bet.status = Won`
+        - **False** → `bet.status = Lost`
+        - **Draw** → `bet.status = Draw` (refund amount)
+      - Add `winners_weight` if winning
+      - Save the bet status changes
+    - Calculate the fee based on `config.fee_*_bps`
+    - Transfer the fee from `round_vault` to `treasury_token_account` using the PDA signer
+    - Update the round:
+      - `round.winners_weight = winners_weight` 
+      - `round.total_fee_collected = fee_amount` 
+      - `round.final_price = asset_price` 
+      - `round.status = Ended` 
+      - `round.settled_at = Clock::now()`
 
 ## Emits / Side Effects
-- Change all `bets` from `Pending` to `Won` or `Lost`
-- Change `round.status` to `Ended`
-- Save `final_price` and `winners_weight` in `round`
+- All bets change status from `Pending` → `Won` / `Lost` / `Draw`
+- `round.status` changes to `Ended`
+- `round.final_price`, `round.winners_weight`, and `round.total_fee_collected` are saved
 
 ## Errors
 | Code                        | Meaning                                                 |
 |--------------------------------|-------------------------------------------------------------|
-| `UnauthorizedKeeper` | If `keeper` is not part of `config.keeper_authorities` |
+| `UnauthorizedKeeper` | If `signer` is not part of `config.keeper_authorities` |
 | `InvalidRoundStatus` | If `round.status` is not `Active` or `PendingSettlement` |
-| `RoundNotReadyForSettlement` | If `Clock::now() < round.end_time` |
+| `RoundNotReady` | If `Clock::now() < round.end_time` |
 | `ProgramPaused` | If `config.status != Active` |
-| `NoBetsPlaced` | If `bet_list` is empty |
+| `InvalidTreasuryAuthority` | If `treasury` does not match config |
+| `InvalidBetAccount` | If PDA bet does not match |
+| `Overflow` | If an overflow occurred during calculation |
+| `InvalidBettorsLength` | If the number of bets > `MAX_BETS_SETTLE`
 
 ---
 
@@ -1191,11 +1218,15 @@ This instruction allows the User to claim their reward (`claim_reward`) if their
 | `bet` | `Account<Bet>` (PDA) | The bet account previously initialized for this round. |
 | `round_vault` | `AccountInfo` (PDA) | The vault account holding bets for this round. |
 | `bettor_token_account` | `Account<TokenAccount>` | The token account of the bettor to transfer GRT from. |
+| `mint` | `Account<Mint>` | Mint token used for betting. |
+| `token_program` | `Program<Token>` | SPL Token program. |
+| `system_program` | `Program<System>` | System program. |
 
 #### Arguments
 _None_
 
 #### Validations
+- `config.status == Active` or `EmergencyPaused`
 - `round.status == Ended`
 - `bet.user == bettor.key()`
 - `bet.status == Won`

@@ -121,6 +121,9 @@ pub enum GoldRushError {
     #[msg("Account data is too small for this operation")]
     AccountDataTooSmall = 0x5008,
 
+    #[msg("Bet status is neither Won nor Draw")]
+    BetNotWonOrDraw = 0x5009,
+
     // Account & Token Errors (0x6000 - 0x6999)
     #[msg("Invalid token account")]
     InvalidTokenAccount = 0x6000,

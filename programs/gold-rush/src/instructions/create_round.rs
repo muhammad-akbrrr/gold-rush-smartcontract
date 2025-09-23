@@ -41,6 +41,11 @@ pub struct CreateRound<'info> {
 impl<'info> CreateRound<'info> {
     pub fn validate(&self, start_time: i64, end_time: i64) -> Result<()> {
         require!(
+            self.config.status == ContractStatus::Active,
+            GoldRushError::ProgramPaused
+        );
+
+        require!(
             self.signer.key() == self.config.admin,
             GoldRushError::Unauthorized
         );

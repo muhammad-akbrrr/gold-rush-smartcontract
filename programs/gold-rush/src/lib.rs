@@ -65,4 +65,8 @@ pub mod gold_rush {
     pub fn settle_round(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
         settle_round::handler(ctx, asset_price)
     }
+
+    pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
+        claim_reward::handler(ctx)
+    }
 }

@@ -77,7 +77,7 @@ pub fn handler(ctx: Context<PlaceBet>, amount: u64, direction: BetDirection) -> 
     // validate
     ctx.accounts.validate(amount)?;
 
-    // transfer from testator to vault
+    // transfer from signer to vault
     let transfer_accounts = Transfer {
         from: ctx.accounts.token_account.to_account_info(),
         to: ctx.accounts.vault.to_account_info(),
