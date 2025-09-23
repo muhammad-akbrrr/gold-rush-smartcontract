@@ -2,8 +2,22 @@ import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { GoldRush } from "../target/types/gold_rush";
 import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
+import {
+  createMint,
+  createAccount,
+  mintTo,
+  TOKEN_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddress,
+  createAssociatedTokenAccount,
+} from "@solana/spl-token";
 import { BN } from "bn.js";
 import { expect } from "chai";
+
+enum MarketType {
+  GoldPrice = 0,
+  StockPrice = 1,
+}
 
 describe("Gold Rust Tests", () => {
   const provider = anchor.AnchorProvider.env();
@@ -18,9 +32,17 @@ describe("Gold Rust Tests", () => {
   let bettorLost1: Keypair;
 
   let tokenMint: PublicKey;
+  let mintAuthority: Keypair;
+  let adminTokenAccount: PublicKey;
+  let keeperTokenAccount: PublicKey;
+  let treasuryTokenAccount: PublicKey;
+  let bettorWin1TokenAccount: PublicKey;
+  let bettorWin2TokenAccount: PublicKey;
+  let bettorLost1TokenAccount: PublicKey;
+
   let configPda: PublicKey;
   let round1Pda: PublicKey;
-  let roundVault1Pda: PublicKey;
+  let round1VaultPda: PublicKey;
   let betWinner1Pda: PublicKey;
   let betWinner2Pda: PublicKey;
   let betLoser1Pda: PublicKey;
@@ -33,6 +55,7 @@ describe("Gold Rust Tests", () => {
     bettorWin1 = Keypair.generate();
     bettorWin2 = Keypair.generate();
     bettorLost1 = Keypair.generate();
+    mintAuthority = Keypair.generate();
 
     // aidrop SOL
     await Promise.all([
@@ -54,16 +77,128 @@ describe("Gold Rust Tests", () => {
       provider.connection.confirmTransaction(
         await provider.connection.requestAirdrop(bettorLost1.publicKey, 1e9)
       ),
+      provider.connection.confirmTransaction(
+        await provider.connection.requestAirdrop(mintAuthority.publicKey, 1e9)
+      ),
     ]);
+
+    // Create Mint and Token Accounts
+    console.log("Creating token mint...");
+    tokenMint = await createMint(
+      provider.connection,
+      mintAuthority,
+      mintAuthority.publicKey,
+      null,
+      9
+    );
+
+    console.log("Token Mint created:", tokenMint.toString());
+
+    // Create Associated Token Accounts for all users
+    console.log("Creating token accounts...");
+    adminTokenAccount = await createAssociatedTokenAccount(
+      provider.connection,
+      admin,
+      tokenMint,
+      admin.publicKey
+    );
+
+    keeperTokenAccount = await createAssociatedTokenAccount(
+      provider.connection,
+      keeper,
+      tokenMint,
+      keeper.publicKey
+    );
+
+    treasuryTokenAccount = await createAssociatedTokenAccount(
+      provider.connection,
+      treasury,
+      tokenMint,
+      treasury.publicKey
+    );
+
+    bettorWin1TokenAccount = await createAssociatedTokenAccount(
+      provider.connection,
+      bettorWin1,
+      tokenMint,
+      bettorWin1.publicKey
+    );
+
+    bettorWin2TokenAccount = await createAssociatedTokenAccount(
+      provider.connection,
+      bettorWin2,
+      tokenMint,
+      bettorWin2.publicKey
+    );
+
+    bettorLost1TokenAccount = await createAssociatedTokenAccount(
+      provider.connection,
+      bettorLost1,
+      tokenMint,
+      bettorLost1.publicKey
+    );
+
+    // Mint some tokens to bettors for testing
+    console.log("Minting tokens to users...");
+    const mintAmount = 1000_000_000_000; // 1000 GRT dengan 9 decimals
+
+    await Promise.all([
+      mintTo(
+        provider.connection,
+        mintAuthority,
+        tokenMint,
+        adminTokenAccount,
+        mintAuthority.publicKey,
+        mintAmount,
+        [mintAuthority]
+      ),
+      mintTo(
+        provider.connection,
+        mintAuthority,
+        tokenMint,
+        bettorWin1TokenAccount,
+        mintAuthority.publicKey,
+        mintAmount,
+        [mintAuthority]
+      ),
+      mintTo(
+        provider.connection,
+        mintAuthority,
+        tokenMint,
+        bettorWin2TokenAccount,
+        mintAuthority.publicKey,
+        mintAmount,
+        [mintAuthority]
+      ),
+      mintTo(
+        provider.connection,
+        mintAuthority,
+        tokenMint,
+        bettorLost1TokenAccount,
+        mintAuthority.publicKey,
+        mintAmount,
+        [mintAuthority]
+      ),
+    ]);
+
+    console.log("Token accounts created and tokens minted successfully!");
 
     // derive pdas
     [configPda] = PublicKey.findProgramAddressSync(
       [Buffer.from("config")],
       program.programId
     );
+    [round1Pda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("round"), new BN(1).toArrayLike(Buffer, "le", 8)],
+      program.programId
+    );
+    [round1VaultPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("vault"), round1Pda.toBuffer()],
+      program.programId
+    );
   });
 
-  it("1. Initialized - Successfully initialized the program", async () => {
+  it("1. Initialize - Successfully initializes the program", async () => {
     try {
       const tx = await program.methods
         .initialize(
@@ -100,6 +235,43 @@ describe("Gold Rust Tests", () => {
       } else {
         throw err;
       }
+    }
+  });
+
+  it("2. Create Round - Successfully creates a round", async () => {
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const startTime = now + 20; // start in 20 seconds
+      const endTime = startTime + 60; // end in 60 seconds after start
+
+      const tx = await program.methods
+        .createRound(
+          {
+            goldPrice: {},
+          },
+          new anchor.BN(startTime),
+          new anchor.BN(endTime)
+        )
+        .accounts({
+          signer: admin.publicKey,
+          config: configPda,
+          round: round1Pda,
+          vault: round1VaultPda,
+          mint: tokenMint,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([admin])
+        .rpc();
+
+      console.log("Signature", tx);
+
+      // verify
+      const roundAccount = await program.account.round.fetch(round1Pda);
+      expect(roundAccount.id.toNumber()).to.equal(1);
+    } catch (err) {
+      console.error("Error creating round:", err);
+      throw err;
     }
   });
 });
