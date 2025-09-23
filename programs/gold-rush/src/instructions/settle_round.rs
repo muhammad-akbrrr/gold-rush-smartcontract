@@ -1,5 +1,6 @@
 use crate::{constants::*, error::GoldRushError, state::*, utils::*};
 use anchor_lang::prelude::*;
+use anchor_lang::AccountDeserialize;
 use anchor_spl::{
     associated_token::AssociatedToken,
     token::{transfer, Mint, Token, TokenAccount, Transfer},
@@ -17,12 +18,14 @@ pub struct SettleRound<'info> {
     pub config: Account<'info, Config>,
 
     #[account(
+        mut,
         seeds = [ROUND_SEED.as_bytes(), &round.id.to_le_bytes()],
         bump
     )]
     pub round: Account<'info, Round>,
 
     #[account(
+        mut,
         seeds = [VAULT_SEED.as_bytes(), round.key().as_ref()],
         bump
     )]
@@ -73,7 +76,7 @@ impl<'info> SettleRound<'info> {
 
         require!(
             Clock::get()?.unix_timestamp >= self.round.end_time,
-            GoldRushError::RoundNotReady
+            GoldRushError::RoundNotReadyForSettlement
         );
 
         Ok(())
@@ -100,30 +103,28 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
     } else {
         let mut winners_weight = 0u64;
 
-        // calculate final price - locked price
+        // calculate price changed
         let locked_price = round.locked_price.unwrap();
         let price_change: i64 = (asset_price as i64)
             .checked_sub(locked_price as i64)
             .ok_or(GoldRushError::Overflow)?;
 
         for acc_info in ctx.remaining_accounts.iter() {
-            // 1) ownership check — ensure account belongs to this program
+            // 1) ownership check
             require_keys_eq!(
                 *acc_info.owner,
                 *ctx.program_id,
                 GoldRushError::InvalidBetAccount
             );
 
-            // 2) borrow mut data (we will read then write)
+            // 2) borrow mut data
             let mut data = acc_info.try_borrow_mut_data()?;
 
-            // 3) deserialize skipping discriminator (first 8 bytes)
-            let bet = Bet::try_from_slice(&data[8..])
+            // 3) deserialize
+            let mut bet: Bet = Bet::try_deserialize(&mut &data[..])
                 .map_err(|_| GoldRushError::InvalidBetAccountData)?;
-            // we need a mutable Bet struct
-            let mut bet = bet;
 
-            // 4) validate expected PDA using round.key(), bet.bettor, bet.id
+            // 4) validate expected PDA
             let expected_pda = Pubkey::find_program_address(
                 &[
                     BET_SEED.as_bytes(),
@@ -145,7 +146,6 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
             match is_winner {
                 None => {
                     bet.status = BetStatus::Draw;
-                    // TODO: handle refund logic
                 }
                 Some(true) => {
                     bet.status = BetStatus::Won;
@@ -158,11 +158,10 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
                 }
             }
 
-            // 6) serialize back into account (skip discriminator)
+            // 6) serialize back
             let serialized = bet
                 .try_to_vec()
                 .map_err(|_| GoldRushError::SerializeError)?;
-            // ensure we don't overflow allocated space
             if serialized.len() > data[8..].len() {
                 return Err(GoldRushError::AccountDataTooSmall.into());
             }
@@ -183,11 +182,15 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
             let transfer_accounts = Transfer {
                 from: ctx.accounts.round_vault.to_account_info(),
                 to: ctx.accounts.treasury_token_account.to_account_info(),
-                authority: ctx.accounts.round_vault.to_account_info(),
+                authority: round.to_account_info(),
             };
-            let round_key = round.key();
-            let vault_bump = ctx.bumps.round_vault;
-            let seeds = &[VAULT_SEED.as_bytes(), round_key.as_ref(), &[vault_bump]];
+            let round_bump = round.bump;
+            let round_id = round.id;
+            let seeds = &[
+                ROUND_SEED.as_bytes(),
+                &round_id.to_le_bytes(),
+                &[round_bump],
+            ];
             let signer = &[&seeds[..]];
             let transfer_ctx = CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),

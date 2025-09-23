@@ -1,7 +1,12 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { GoldRush } from "../target/types/gold_rush";
-import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
+import {
+  AccountMeta,
+  Keypair,
+  PublicKey,
+  SystemProgram,
+} from "@solana/web3.js";
 import {
   createMint,
   createAccount,
@@ -11,7 +16,6 @@ import {
   getAssociatedTokenAddress,
   createAssociatedTokenAccount,
 } from "@solana/spl-token";
-import { BN } from "bn.js";
 import { expect } from "chai";
 
 enum MarketType {
@@ -46,9 +50,6 @@ describe("Gold Rust Tests", () => {
   let betWinner1Pda: PublicKey;
   let betWinner2Pda: PublicKey;
   let betLoser1Pda: PublicKey;
-
-  const startGoldPrice = 3_787_630;
-  const endGoldPrice = 3_900_000;
 
   before(async () => {
     // generate keypairs
@@ -245,7 +246,7 @@ describe("Gold Rust Tests", () => {
     try {
       const now = Math.floor(Date.now() / 1000);
       const startTime = now + 5; // start in 5 seconds
-      const endTime = startTime + 60; // end in 60 seconds after start
+      const endTime = startTime + 20; // end in 20 seconds after start
 
       const tx = await program.methods
         .createRound(
@@ -280,43 +281,23 @@ describe("Gold Rust Tests", () => {
 
   it("Start Round - Successfully starts a round", async () => {
     try {
-      // wait until now >= start_time
-      const latestRound = await program.account.round.fetch(round1Pda);
-      const waitSeconds = Math.max(
-        0,
-        latestRound.startTime.toNumber() - Math.floor(Date.now() / 1000) + 1
-      );
-      if (waitSeconds > 0) {
-        await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
-      }
+      const startPrice = 3_787_630;
+
+      // Wait for 10s
+      console.log("Waiting for 10 seconds until start time reached...");
+      await new Promise((resolve) => setTimeout(resolve, 10000));
 
       // Retry loop handle time in cluster vs wall clock
-      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-      let tx: string | null = null;
-      const maxAttempts = 20;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          tx = await program.methods
-            .startRound(new anchor.BN(startGoldPrice))
-            .accounts({
-              signer: keeper.publicKey,
-              config: configPda,
-              round: round1Pda,
-              systemProgram: SystemProgram.programId,
-            })
-            .signers([keeper])
-            .rpc();
-          break;
-        } catch (err: any) {
-          const msg = err?.message || "";
-          if (msg.includes("RoundNotReady") && attempt < maxAttempts) {
-            await sleep(1000);
-            continue;
-          }
-          throw err;
-        }
-      }
-      if (!tx) throw new Error("Failed to start round after retries");
+      const tx = await program.methods
+        .startRound(new anchor.BN(startPrice))
+        .accounts({
+          signer: keeper.publicKey,
+          config: configPda,
+          round: round1Pda,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([keeper])
+        .rpc();
 
       console.log("Signature", tx);
 
@@ -324,7 +305,7 @@ describe("Gold Rust Tests", () => {
       const roundAccount = await program.account.round.fetch(round1Pda);
       expect(roundAccount.status).to.deep.equal({ active: {} });
       expect(roundAccount.lockedPrice?.toString()).to.equal(
-        new anchor.BN(startGoldPrice).toString()
+        new anchor.BN(startPrice).toString()
       );
     } catch (err) {
       console.error("Error starting round:", err);
@@ -332,7 +313,7 @@ describe("Gold Rust Tests", () => {
     }
   });
 
-  it("Place Be (Round 1 - Up Winner 1) - Successfully places a bet", async () => {
+  it("Place Bet (Round 1 - Up Winner 1) - Successfully places a bet", async () => {
     try {
       const amount = new anchor.BN(10_000_000); // 10 GRT
       const direction = { up: {} };
@@ -379,7 +360,7 @@ describe("Gold Rust Tests", () => {
     }
   });
 
-  it("Place Be (Round 1 - Percentage Winner 2) - Successfully places a bet", async () => {
+  it("Place Bet (Round 1 - Percentage Winner 2) - Successfully places a bet", async () => {
     try {
       const amount = new anchor.BN(15_000_000); // 15 GRT
       const direction = {
@@ -428,7 +409,7 @@ describe("Gold Rust Tests", () => {
     }
   });
 
-  it("Place Be (Round 1 - Down Lost 1) - Successfully places a bet", async () => {
+  it("Place Bet (Round 1 - Down Lost 1) - Successfully places a bet", async () => {
     try {
       const amount = new anchor.BN(20_000_000); // 20 GRT
       const direction = { down: {} };
@@ -471,6 +452,112 @@ describe("Gold Rust Tests", () => {
       );
     } catch (err) {
       console.error("Error placing bet:", err);
+      throw err;
+    }
+  });
+
+  it("Settle Round - Successfully settles a round", async () => {
+    try {
+      const endPrice = new anchor.BN(3_900_000);
+      const round = await program.account.round.fetch(round1Pda);
+      let remainingAccounts: Array<AccountMeta> = [];
+
+      // TODO: Dynamic remaning accounts from total bet
+      // for (let i = 1; i <= round.totalBets.toNumber(); i++) {
+      //   const [betPda] = PublicKey.findProgramAddressSync(
+      //     [
+      //       Buffer.from("bet"),
+      //       round1Pda.toBuffer(),
+      //       bettorWin1.publicKey.toBuffer(),
+      //       new anchor.BN(i).toArrayLike(Buffer, "le", 8),
+      //     ],
+      //     program.programId
+      //   );
+      //   remainingAccounts.push({
+      //     pubkey: betPda,
+      //     isSigner: false,
+      //     isWritable: true,
+      //   });
+      // }
+
+      const [betPd1a] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("bet"),
+          round1Pda.toBuffer(),
+          bettorWin1.publicKey.toBuffer(),
+          new anchor.BN(1).toArrayLike(Buffer, "le", 8),
+        ],
+        program.programId
+      );
+      remainingAccounts.push({
+        pubkey: betPd1a,
+        isSigner: false,
+        isWritable: true,
+      });
+
+      const [betPd2a] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("bet"),
+          round1Pda.toBuffer(),
+          bettorWin2.publicKey.toBuffer(),
+          new anchor.BN(2).toArrayLike(Buffer, "le", 8),
+        ],
+        program.programId
+      );
+      remainingAccounts.push({
+        pubkey: betPd2a,
+        isSigner: false,
+        isWritable: true,
+      });
+
+      const [betPd3a] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("bet"),
+          round1Pda.toBuffer(),
+          bettorLost1.publicKey.toBuffer(),
+          new anchor.BN(3).toArrayLike(Buffer, "le", 8),
+        ],
+        program.programId
+      );
+      remainingAccounts.push({
+        pubkey: betPd3a,
+        isSigner: false,
+        isWritable: true,
+      });
+
+      console.log(
+        "Remaining acounts generated with total: ",
+        remainingAccounts.length
+      );
+
+      // Wait for 20s
+      console.log("Waiting for 20 seconds until end time reached...");
+      await new Promise((resolve) => setTimeout(resolve, 20000));
+
+      const tx = await program.methods
+        .settleRound(endPrice)
+        .accounts({
+          signer: keeper.publicKey,
+          config: configPda,
+          round: round1Pda,
+          roundVault: round1VaultPda,
+          treasury: treasury.publicKey,
+          treasuryTokenAccount: treasuryTokenAccount,
+          mint: tokenMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .remainingAccounts(remainingAccounts)
+        .signers([keeper])
+        .rpc();
+
+      console.log("Signature", tx);
+
+      // verify
+      const betAccount = await program.account.bet.fetch(betWinner1Pda);
+      expect(betAccount.status).to.deep.equal({ won: {} });
+    } catch (err) {
+      console.error("Error settling round:", err);
       throw err;
     }
   });
