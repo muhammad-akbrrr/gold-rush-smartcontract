@@ -14,6 +14,7 @@ pub struct PlaceBet<'info> {
     pub config: Account<'info, Config>,
 
     #[account(
+        mut,
         seeds = [ROUND_SEED.as_bytes(), &round.id.to_le_bytes()],
         bump
     )]
@@ -29,6 +30,7 @@ pub struct PlaceBet<'info> {
     pub bet: Account<'info, Bet>,
 
     #[account(
+        mut,
         seeds = [VAULT_SEED.as_bytes(), round.key().as_ref()],
         bump
     )]
@@ -65,7 +67,7 @@ impl<'info> PlaceBet<'info> {
         );
 
         require!(
-            amount > self.config.min_bet_amount,
+            amount >= self.config.min_bet_amount,
             GoldRushError::BetBelowMinimum
         );
 
@@ -135,11 +137,11 @@ pub fn handler(ctx: Context<PlaceBet>, amount: u64, direction: BetDirection) -> 
     bet.bump = ctx.bumps.bet;
 
     // set round fields
-    round
+    round.total_pool = round
         .total_pool
         .checked_add(amount)
         .ok_or(GoldRushError::Overflow)?;
-    round
+    round.total_bets = round
         .total_bets
         .checked_add(1)
         .ok_or(GoldRushError::Overflow)?;

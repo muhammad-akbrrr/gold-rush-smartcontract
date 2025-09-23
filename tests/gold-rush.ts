@@ -141,9 +141,9 @@ describe("Gold Rust Tests", () => {
       bettorLost1.publicKey
     );
 
-    // Mint some tokens to bettors for testing
+    // Mint tokens
     console.log("Minting tokens to users...");
-    const mintAmount = 1000_000_000_000; // 1000 GRT dengan 9 decimals
+    const mintAmount = 1000_000_000_000; // 1000 GRT
 
     await Promise.all([
       mintTo(
@@ -192,7 +192,7 @@ describe("Gold Rust Tests", () => {
       program.programId
     );
     [round1Pda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("round"), new BN(1).toArrayLike(Buffer, "le", 8)],
+      [Buffer.from("round"), new anchor.BN(1).toArrayLike(Buffer, "le", 8)],
       program.programId
     );
     [round1VaultPda] = PublicKey.findProgramAddressSync(
@@ -201,7 +201,7 @@ describe("Gold Rust Tests", () => {
     );
   });
 
-  it("1. Initialize - Successfully initializes the program", async () => {
+  it("Initialize - Successfully initializes the program", async () => {
     try {
       const tx = await program.methods
         .initialize(
@@ -241,7 +241,7 @@ describe("Gold Rust Tests", () => {
     }
   });
 
-  it("2. Create Round - Successfully creates a round", async () => {
+  it("Create Round - Successfully creates a round", async () => {
     try {
       const now = Math.floor(Date.now() / 1000);
       const startTime = now + 5; // start in 5 seconds
@@ -271,7 +271,6 @@ describe("Gold Rust Tests", () => {
 
       // verify
       const roundAccount = await program.account.round.fetch(round1Pda);
-      console.log("startTime", roundAccount.startTime.toNumber());
       expect(roundAccount.id.toNumber()).to.equal(1);
     } catch (err) {
       console.error("Error creating round:", err);
@@ -279,7 +278,7 @@ describe("Gold Rust Tests", () => {
     }
   });
 
-  it("3. Start Round - Successfully starts a round", async () => {
+  it("Start Round - Successfully starts a round", async () => {
     try {
       // wait until now >= start_time
       const latestRound = await program.account.round.fetch(round1Pda);
@@ -329,6 +328,149 @@ describe("Gold Rust Tests", () => {
       );
     } catch (err) {
       console.error("Error starting round:", err);
+      throw err;
+    }
+  });
+
+  it("Place Be (Round 1 - Up Winner 1) - Successfully places a bet", async () => {
+    try {
+      const amount = new anchor.BN(10_000_000); // 10 GRT
+      const direction = { up: {} };
+
+      const roundAccount = await program.account.round.fetch(round1Pda);
+      const nextBetId = roundAccount.totalBets.addn(1);
+      [betWinner1Pda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("bet"),
+          round1Pda.toBuffer(),
+          bettorWin1.publicKey.toBuffer(),
+          nextBetId.toArrayLike(Buffer, "le", 8),
+        ],
+        program.programId
+      );
+
+      const tx = await program.methods
+        .placeBet(amount, direction)
+        .accounts({
+          signer: bettorWin1.publicKey,
+          config: configPda,
+          round: round1Pda,
+          bet: betWinner1Pda,
+          vault: round1VaultPda,
+          tokenAccount: bettorWin1TokenAccount,
+          mint: tokenMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([bettorWin1])
+        .rpc();
+
+      console.log("Signature", tx);
+
+      // verify
+      const betAccount = await program.account.bet.fetch(betWinner1Pda);
+      expect(betAccount.amount.toString()).to.eq(amount.toString());
+      expect(betAccount.bettor.toString()).to.equal(
+        bettorWin1.publicKey.toString()
+      );
+    } catch (err) {
+      console.error("Error placing bet:", err);
+      throw err;
+    }
+  });
+
+  it("Place Be (Round 1 - Percentage Winner 2) - Successfully places a bet", async () => {
+    try {
+      const amount = new anchor.BN(15_000_000); // 15 GRT
+      const direction = {
+        percentageChangeBps: { 0: 10 },
+      };
+
+      const roundAccount = await program.account.round.fetch(round1Pda);
+      const nextBetId = roundAccount.totalBets.addn(1);
+      [betWinner2Pda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("bet"),
+          round1Pda.toBuffer(),
+          bettorWin2.publicKey.toBuffer(),
+          nextBetId.toArrayLike(Buffer, "le", 8),
+        ],
+        program.programId
+      );
+
+      const tx = await program.methods
+        .placeBet(amount, direction)
+        .accounts({
+          signer: bettorWin2.publicKey,
+          config: configPda,
+          round: round1Pda,
+          bet: betWinner2Pda,
+          vault: round1VaultPda,
+          tokenAccount: bettorWin2TokenAccount,
+          mint: tokenMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([bettorWin2])
+        .rpc();
+
+      console.log("Signature", tx);
+
+      // verify
+      const betAccount = await program.account.bet.fetch(betWinner2Pda);
+      expect(betAccount.amount.toString()).to.eq(amount.toString());
+      expect(betAccount.bettor.toString()).to.equal(
+        bettorWin2.publicKey.toString()
+      );
+    } catch (err) {
+      console.error("Error placing bet:", err);
+      throw err;
+    }
+  });
+
+  it("Place Be (Round 1 - Down Lost 1) - Successfully places a bet", async () => {
+    try {
+      const amount = new anchor.BN(20_000_000); // 20 GRT
+      const direction = { down: {} };
+
+      const roundAccount = await program.account.round.fetch(round1Pda);
+      const nextBetId = roundAccount.totalBets.addn(1);
+      [betLoser1Pda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("bet"),
+          round1Pda.toBuffer(),
+          bettorLost1.publicKey.toBuffer(),
+          nextBetId.toArrayLike(Buffer, "le", 8),
+        ],
+        program.programId
+      );
+
+      const tx = await program.methods
+        .placeBet(amount, direction)
+        .accounts({
+          signer: bettorLost1.publicKey,
+          config: configPda,
+          round: round1Pda,
+          bet: betLoser1Pda,
+          vault: round1VaultPda,
+          tokenAccount: bettorLost1TokenAccount,
+          mint: tokenMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([bettorLost1])
+        .rpc();
+
+      console.log("Signature", tx);
+
+      // verify
+      const betAccount = await program.account.bet.fetch(betLoser1Pda);
+      expect(betAccount.amount.toString()).to.eq(amount.toString());
+      expect(betAccount.bettor.toString()).to.equal(
+        bettorLost1.publicKey.toString()
+      );
+    } catch (err) {
+      console.error("Error placing bet:", err);
       throw err;
     }
   });
