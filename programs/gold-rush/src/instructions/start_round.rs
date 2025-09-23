@@ -13,6 +13,7 @@ pub struct StartRound<'info> {
     pub config: Account<'info, Config>,
 
     #[account(
+        mut,
         seeds = [ROUND_SEED.as_bytes(), &round.id.to_le_bytes()],
         bump
     )]
@@ -39,7 +40,7 @@ impl<'info> StartRound<'info> {
         );
 
         require!(
-            Clock::get()?.unix_timestamp > self.round.start_time,
+            Clock::get()?.unix_timestamp >= self.round.start_time,
             GoldRushError::RoundNotReady
         );
 

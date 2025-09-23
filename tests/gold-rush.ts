@@ -47,6 +47,9 @@ describe("Gold Rust Tests", () => {
   let betWinner2Pda: PublicKey;
   let betLoser1Pda: PublicKey;
 
+  const startGoldPrice = 3_787_630;
+  const endGoldPrice = 3_900_000;
+
   before(async () => {
     // generate keypairs
     admin = Keypair.generate();
@@ -241,7 +244,7 @@ describe("Gold Rust Tests", () => {
   it("2. Create Round - Successfully creates a round", async () => {
     try {
       const now = Math.floor(Date.now() / 1000);
-      const startTime = now + 20; // start in 20 seconds
+      const startTime = now + 5; // start in 5 seconds
       const endTime = startTime + 60; // end in 60 seconds after start
 
       const tx = await program.methods
@@ -268,9 +271,64 @@ describe("Gold Rust Tests", () => {
 
       // verify
       const roundAccount = await program.account.round.fetch(round1Pda);
+      console.log("startTime", roundAccount.startTime.toNumber());
       expect(roundAccount.id.toNumber()).to.equal(1);
     } catch (err) {
       console.error("Error creating round:", err);
+      throw err;
+    }
+  });
+
+  it("3. Start Round - Successfully starts a round", async () => {
+    try {
+      // wait until now >= start_time
+      const latestRound = await program.account.round.fetch(round1Pda);
+      const waitSeconds = Math.max(
+        0,
+        latestRound.startTime.toNumber() - Math.floor(Date.now() / 1000) + 1
+      );
+      if (waitSeconds > 0) {
+        await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+      }
+
+      // Retry loop handle time in cluster vs wall clock
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      let tx: string | null = null;
+      const maxAttempts = 20;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          tx = await program.methods
+            .startRound(new anchor.BN(startGoldPrice))
+            .accounts({
+              signer: keeper.publicKey,
+              config: configPda,
+              round: round1Pda,
+              systemProgram: SystemProgram.programId,
+            })
+            .signers([keeper])
+            .rpc();
+          break;
+        } catch (err: any) {
+          const msg = err?.message || "";
+          if (msg.includes("RoundNotReady") && attempt < maxAttempts) {
+            await sleep(1000);
+            continue;
+          }
+          throw err;
+        }
+      }
+      if (!tx) throw new Error("Failed to start round after retries");
+
+      console.log("Signature", tx);
+
+      // verify
+      const roundAccount = await program.account.round.fetch(round1Pda);
+      expect(roundAccount.status).to.deep.equal({ active: {} });
+      expect(roundAccount.lockedPrice?.toString()).to.equal(
+        new anchor.BN(startGoldPrice).toString()
+      );
+    } catch (err) {
+      console.error("Error starting round:", err);
       throw err;
     }
   });
