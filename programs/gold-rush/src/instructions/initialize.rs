@@ -25,9 +25,9 @@ impl<'info> Initialize<'info> {
         fee_gold_price_bps: u16,
         fee_stock_price_bps: u16,
         min_bet_amount: u64,
-        min_time_factor_bps: u64,
-        max_time_factor_bps: u64,
-        default_direction_factor_bps: u64,
+        min_time_factor_bps: u16,
+        max_time_factor_bps: u16,
+        default_direction_factor_bps: u16,
     ) -> Result<()> {
         require!(
             keeper_authorities.len() > 0,
@@ -52,17 +52,17 @@ impl<'info> Initialize<'info> {
         require!(min_bet_amount > 0, GoldRushError::InvalidMinBetAmount);
 
         require!(
-            (0..=HUNDRED_PERCENT_BPS as u64).contains(&min_time_factor_bps),
+            (0..=HUNDRED_PERCENT_BPS).contains(&min_time_factor_bps),
             GoldRushError::InvalidTimeFactorConfig
         );
 
         require!(
-            (0..=HUNDRED_PERCENT_BPS as u64).contains(&max_time_factor_bps),
+            (0..=HUNDRED_PERCENT_BPS).contains(&max_time_factor_bps),
             GoldRushError::InvalidTimeFactorConfig
         );
 
         require!(
-            (0..=HUNDRED_PERCENT_BPS as u64).contains(&default_direction_factor_bps),
+            (0..=HUNDRED_PERCENT_BPS).contains(&default_direction_factor_bps),
             GoldRushError::InvalidDirectionFactorConfig
         );
 
@@ -83,9 +83,9 @@ pub fn handler(
     fee_gold_price_bps: u16,
     fee_stock_price_bps: u16,
     min_bet_amount: u64,
-    min_time_factor_bps: u64,
-    max_time_factor_bps: u64,
-    default_direction_factor_bps: u64,
+    min_time_factor_bps: u16,
+    max_time_factor_bps: u16,
+    default_direction_factor_bps: u16,
 ) -> Result<()> {
     // validate
     ctx.accounts.validate(

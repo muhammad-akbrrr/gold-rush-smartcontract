@@ -27,9 +27,9 @@ pub mod gold_rush {
         fee_gold_price_bps: u16,
         fee_stock_price_bps: u16,
         min_bet_amount: u64,
-        min_time_factor_bps: u64,
-        max_time_factor_bps: u64,
-        default_direction_factor_bps: u64,
+        min_time_factor_bps: u16,
+        max_time_factor_bps: u16,
+        default_direction_factor_bps: u16,
     ) -> Result<()> {
         initialize::handler(
             ctx,

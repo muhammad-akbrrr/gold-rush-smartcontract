@@ -105,12 +105,12 @@ pub fn handler(ctx: Context<PlaceBet>, amount: u64, direction: BetDirection) -> 
     let direction_factor = calculate_direction_factor(
         &round.market_type,
         &direction,
-        config.default_direction_factor_bps,
+        config.default_direction_factor_bps as u64,
     )?;
     let time_factor = calculate_time_factor(
         time_elapsed,
-        config.min_time_factor_bps,
-        config.max_time_factor_bps,
+        config.min_time_factor_bps as u64,
+        config.max_time_factor_bps as u64,
         round_duration,
     )?;
     let weight = amount
