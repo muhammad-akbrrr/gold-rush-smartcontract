@@ -21,6 +21,7 @@ pub struct Round {
     pub total_fee_collected: u64, // The total fees collected for this round.
     pub total_reward_pool: u64, // The total reward pool after deducting fees.
     pub winners_weight: u64, // The total weight of winning bets (for reward calculation). Default to 0 if no winners.
+    pub settled_bets: u64,   // Number of bets that have been processed (for incremental settlement)
 
     // --- Metadata ---
     pub created_at: i64,         // The timestamp when the round was created.

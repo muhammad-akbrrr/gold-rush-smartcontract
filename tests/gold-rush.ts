@@ -220,7 +220,7 @@ describe("Gold Rust Tests", () => {
           signer: admin.publicKey,
           config: configPda,
           systemProgram: SystemProgram.programId,
-        })
+        } as any)
         .signers([admin])
         .rpc();
 
@@ -264,7 +264,7 @@ describe("Gold Rust Tests", () => {
           mint: tokenMint,
           systemProgram: SystemProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
-        })
+        } as any)
         .signers([admin])
         .rpc();
 
@@ -295,7 +295,7 @@ describe("Gold Rust Tests", () => {
           config: configPda,
           round: round1Pda,
           systemProgram: SystemProgram.programId,
-        })
+        } as any)
         .signers([keeper])
         .rpc();
 
@@ -324,7 +324,6 @@ describe("Gold Rust Tests", () => {
         [
           Buffer.from("bet"),
           round1Pda.toBuffer(),
-          bettorWin1.publicKey.toBuffer(),
           nextBetId.toArrayLike(Buffer, "le", 8),
         ],
         program.programId
@@ -342,7 +341,7 @@ describe("Gold Rust Tests", () => {
           mint: tokenMint,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
-        })
+        } as any)
         .signers([bettorWin1])
         .rpc();
 
@@ -373,7 +372,6 @@ describe("Gold Rust Tests", () => {
         [
           Buffer.from("bet"),
           round1Pda.toBuffer(),
-          bettorWin2.publicKey.toBuffer(),
           nextBetId.toArrayLike(Buffer, "le", 8),
         ],
         program.programId
@@ -391,7 +389,7 @@ describe("Gold Rust Tests", () => {
           mint: tokenMint,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
-        })
+        } as any)
         .signers([bettorWin2])
         .rpc();
 
@@ -420,7 +418,6 @@ describe("Gold Rust Tests", () => {
         [
           Buffer.from("bet"),
           round1Pda.toBuffer(),
-          bettorLost1.publicKey.toBuffer(),
           nextBetId.toArrayLike(Buffer, "le", 8),
         ],
         program.programId
@@ -438,7 +435,7 @@ describe("Gold Rust Tests", () => {
           mint: tokenMint,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
-        })
+        } as any)
         .signers([bettorLost1])
         .rpc();
 
@@ -462,68 +459,21 @@ describe("Gold Rust Tests", () => {
       const round = await program.account.round.fetch(round1Pda);
       let remainingAccounts: Array<AccountMeta> = [];
 
-      // TODO: Dynamic remaning accounts from total bet
-      // for (let i = 1; i <= round.totalBets.toNumber(); i++) {
-      //   const [betPda] = PublicKey.findProgramAddressSync(
-      //     [
-      //       Buffer.from("bet"),
-      //       round1Pda.toBuffer(),
-      //       bettorWin1.publicKey.toBuffer(),
-      //       new anchor.BN(i).toArrayLike(Buffer, "le", 8),
-      //     ],
-      //     program.programId
-      //   );
-      //   remainingAccounts.push({
-      //     pubkey: betPda,
-      //     isSigner: false,
-      //     isWritable: true,
-      //   });
-      // }
-
-      const [betPd1a] = PublicKey.findProgramAddressSync(
-        [
-          Buffer.from("bet"),
-          round1Pda.toBuffer(),
-          bettorWin1.publicKey.toBuffer(),
-          new anchor.BN(1).toArrayLike(Buffer, "le", 8),
-        ],
-        program.programId
-      );
-      remainingAccounts.push({
-        pubkey: betPd1a,
-        isSigner: false,
-        isWritable: true,
-      });
-
-      const [betPd2a] = PublicKey.findProgramAddressSync(
-        [
-          Buffer.from("bet"),
-          round1Pda.toBuffer(),
-          bettorWin2.publicKey.toBuffer(),
-          new anchor.BN(2).toArrayLike(Buffer, "le", 8),
-        ],
-        program.programId
-      );
-      remainingAccounts.push({
-        pubkey: betPd2a,
-        isSigner: false,
-        isWritable: true,
-      });
-
-      const [betPd3a] = PublicKey.findProgramAddressSync(
-        [
-          Buffer.from("bet"),
-          round1Pda.toBuffer(),
-          bettorLost1.publicKey.toBuffer(),
-          new anchor.BN(3).toArrayLike(Buffer, "le", 8),
-        ],
-        program.programId
-      );
-      remainingAccounts.push({
-        pubkey: betPd3a,
-        isSigner: false,
-        isWritable: true,
-      });
+      for (let i = 1; i <= round.totalBets.toNumber(); i++) {
+        const [betPda] = PublicKey.findProgramAddressSync(
+          [
+            Buffer.from("bet"),
+            round1Pda.toBuffer(),
+            new anchor.BN(i).toArrayLike(Buffer, "le", 8),
+          ],
+          program.programId
+        );
+        remainingAccounts.push({
+          pubkey: betPda,
+          isSigner: false,
+          isWritable: true,
+        });
+      }
 
       console.log(
         "Remaining acounts generated with total: ",
@@ -534,24 +484,39 @@ describe("Gold Rust Tests", () => {
       console.log("Waiting for 20 seconds until end time reached...");
       await new Promise((resolve) => setTimeout(resolve, 20000));
 
-      const tx = await program.methods
-        .settleRound(endPrice)
-        .accounts({
-          signer: keeper.publicKey,
-          config: configPda,
-          round: round1Pda,
-          roundVault: round1VaultPda,
-          treasury: treasury.publicKey,
-          treasuryTokenAccount: treasuryTokenAccount,
-          mint: tokenMint,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-        })
-        .remainingAccounts(remainingAccounts)
-        .signers([keeper])
-        .rpc();
+      // Pisahkan remaining accounts menjadi batch berukuran max 20 akun per tx
+      const chunkSize = 20;
+      const chunks: Array<Array<AccountMeta>> = [];
+      for (let i = 0; i < remainingAccounts.length; i += chunkSize) {
+        chunks.push(remainingAccounts.slice(i, i + chunkSize));
+      }
 
-      console.log("Signature", tx);
+      for (let b = 0; b < chunks.length; b++) {
+        const tx = await program.methods
+          .settleRound(endPrice)
+          .accounts({
+            signer: keeper.publicKey,
+            config: configPda,
+            round: round1Pda,
+            roundVault: round1VaultPda,
+            treasury: treasury.publicKey,
+            treasuryTokenAccount: treasuryTokenAccount,
+            mint: tokenMint,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          } as any)
+          .remainingAccounts(chunks[b])
+          .signers([keeper])
+          .rpc();
+
+        console.log(
+          `Signature (batch ${b + 1}/${chunks.length} with accounts ${
+            chunks[b].length
+          })`,
+          tx
+        );
+      }
 
       // verify
       const betAccount = await program.account.bet.fetch(betWinner1Pda);

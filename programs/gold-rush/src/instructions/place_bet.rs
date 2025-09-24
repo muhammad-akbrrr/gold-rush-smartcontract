@@ -24,7 +24,7 @@ pub struct PlaceBet<'info> {
         init,
         payer = signer,
         space = DISRIMINATOR_SIZE as usize + Bet::INIT_SPACE,
-        seeds = [BET_SEED.as_bytes(), round.key().as_ref(), signer.key().as_ref(), &(round.total_bets + 1).to_le_bytes()],
+        seeds = [BET_SEED.as_bytes(), round.key().as_ref(), &(round.total_bets + 1).to_le_bytes()],
         bump
     )]
     pub bet: Account<'info, Bet>,

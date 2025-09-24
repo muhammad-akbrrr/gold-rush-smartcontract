@@ -101,7 +101,48 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
             round.status = RoundStatus::PendingSettlement;
         }
     } else {
-        let mut winners_weight = 0u64;
+        // If first batch, compute and lock fee and reward pool once
+        if round.total_reward_pool == 0 && round.total_fee_collected == 0 {
+            let fee_bps = match round.market_type {
+                MarketType::GoldPrice => config.fee_gold_price_bps,
+                MarketType::StockPrice => config.fee_stock_price_bps,
+            };
+            let fee_amount = round
+                .total_pool
+                .checked_mul(fee_bps as u64)
+                .and_then(|x| x.checked_div(HUNDRED_PERCENT_BPS as u64))
+                .ok_or(GoldRushError::Overflow)?;
+            round.total_fee_collected = fee_amount;
+            round.total_reward_pool = round
+                .total_pool
+                .checked_sub(fee_amount)
+                .ok_or(GoldRushError::Underflow)?;
+
+            // transfer fee immediately on first batch
+            if fee_amount > 0 {
+                let transfer_accounts = Transfer {
+                    from: ctx.accounts.round_vault.to_account_info(),
+                    to: ctx.accounts.treasury_token_account.to_account_info(),
+                    authority: round.to_account_info(),
+                };
+                let round_bump = round.bump;
+                let round_id = round.id;
+                let seeds = &[
+                    ROUND_SEED.as_bytes(),
+                    &round_id.to_le_bytes(),
+                    &[round_bump],
+                ];
+                let signer = &[&seeds[..]];
+                let transfer_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    transfer_accounts,
+                    signer,
+                );
+                transfer(transfer_ctx, fee_amount)?;
+            }
+        }
+
+        let mut batch_winners_weight = 0u64;
 
         // calculate price changed
         let locked_price = round.locked_price.unwrap();
@@ -129,7 +170,6 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
                 &[
                     BET_SEED.as_bytes(),
                     round.key().as_ref(),
-                    bet.bettor.as_ref(),
                     &bet.id.to_le_bytes(),
                 ],
                 ctx.program_id,
@@ -149,7 +189,7 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
                 }
                 Some(true) => {
                     bet.status = BetStatus::Won;
-                    winners_weight = winners_weight
+                    batch_winners_weight = batch_winners_weight
                         .checked_add(bet.weight)
                         .ok_or(GoldRushError::Overflow)?;
                 }
@@ -168,44 +208,25 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
             data[8..8 + serialized.len()].copy_from_slice(&serialized);
         }
 
-        // transfer fee
-        let fee_bps = match round.market_type {
-            MarketType::GoldPrice => config.fee_gold_price_bps,
-            MarketType::StockPrice => config.fee_stock_price_bps,
-        };
-        let fee_amount = round
-            .total_pool
-            .checked_mul(fee_bps as u64)
-            .and_then(|x| x.checked_div(HUNDRED_PERCENT_BPS as u64))
+        // accumulate progress
+        round.winners_weight = round
+            .winners_weight
+            .checked_add(batch_winners_weight)
             .ok_or(GoldRushError::Overflow)?;
-        if fee_amount > 0 {
-            let transfer_accounts = Transfer {
-                from: ctx.accounts.round_vault.to_account_info(),
-                to: ctx.accounts.treasury_token_account.to_account_info(),
-                authority: round.to_account_info(),
-            };
-            let round_bump = round.bump;
-            let round_id = round.id;
-            let seeds = &[
-                ROUND_SEED.as_bytes(),
-                &round_id.to_le_bytes(),
-                &[round_bump],
-            ];
-            let signer = &[&seeds[..]];
-            let transfer_ctx = CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                transfer_accounts,
-                signer,
-            );
-            transfer(transfer_ctx, fee_amount)?;
-        }
+        round.settled_bets = round
+            .settled_bets
+            .checked_add(ctx.remaining_accounts.len() as u64)
+            .ok_or(GoldRushError::Overflow)?;
 
-        // set round fields
-        round.status = RoundStatus::Ended;
-        round.final_price = Some(asset_price);
-        round.winners_weight = winners_weight;
-        round.total_fee_collected = fee_amount;
-        round.settled_at = Some(Clock::get()?.unix_timestamp);
+        // finalize only when all bets processed
+        if round.settled_bets >= round.total_bets {
+            round.status = RoundStatus::Ended;
+            round.final_price = Some(asset_price);
+            round.settled_at = Some(Clock::get()?.unix_timestamp);
+        } else if round.status == RoundStatus::Active {
+            // mark as pending to indicate partial settlement in progress
+            round.status = RoundStatus::PendingSettlement;
+        }
     }
 
     Ok(())

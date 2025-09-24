@@ -20,7 +20,7 @@ pub struct ClaimReward<'info> {
     pub round: Account<'info, Round>,
 
     #[account(
-        seeds = [BET_SEED.as_bytes(), round.key().as_ref(), signer.key().as_ref(), &bet.id.to_le_bytes()],
+        seeds = [BET_SEED.as_bytes(), round.key().as_ref(), &bet.id.to_le_bytes()],
         bump
     )]
     pub bet: Account<'info, Bet>,

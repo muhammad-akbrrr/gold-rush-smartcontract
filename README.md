@@ -379,11 +379,10 @@ pub enum ContractStatus {
 pub struct Round {
   // --- Identity ---
   pub id: u64,                   // Unique identifier for the round (incremental from config.current_round_counter).
-  pub asset: [u8; 8],             // The asset being bet on (e.g., Gold, Stock) as a fixed-size byte array.
   pub start_time: i64,           // The timestamp when round is scheduled to start.
   pub end_time: i64,             // The timestamp when round is scheduled to end.
   pub vault: Pubkey,             // The vault account holding the bets for this round.
-  pub vault_bump: u8,         // A bump seed for the vault PDA.
+  pub vault_bump: u8,            // A bump seed for the vault PDA.
   pub market_type: MarketType,   // The type of market (GoldPrice, StockPrice).
 
   // --- State ---
@@ -395,6 +394,7 @@ pub struct Round {
   pub total_fee_collected: u64,  // The total fees collected for this round.
   pub total_reward_pool: u64,    // The total reward pool after deducting fees.
   pub winners_weight: u64,       // The total weight of winning bets (for reward calculation). Default to 0 if no winners.
+  pub settled_bets: u64,         // Number of bets that have been processed (for incremental settlement)
 
   // --- Metadata ---
   pub created_at: i64,           // The timestamp when the round was created.
@@ -1031,7 +1031,7 @@ Upon successful settlement, the round status changes to **Ended**.
 #### Context
 | Field         | Type                    | Description                                         |
 |-------------------|----------------------------|----------------------------------------------------------|
-| `signer` / `keeper` | `Signer` | The keeper authorized to execute settlements. |
+| `signer` | `Signer` | The keeper authorized to execute settlements. |
 | `config` | `Account<Config>` (PDA) | Stores global configuration data (status, fee bps, keeper list, treasury). |
 | `round` | `Account<Round>` (PDA) | The round to be settled. |
 | `round_vault` | `Account<TokenAccount>` (PDA) | The token vault for the round. |
@@ -1041,7 +1041,6 @@ Upon successful settlement, the round status changes to **Ended**.
 | `token_program` | `Program<Token>` | SPL Token program. |
 | `associated_token_program` | `Program<AssociatedToken>` | Program to create an ATA treasury if it doesn't already exist. |
 | `system_program` | `Program<System>` | System program. |
-| `remaining_accounts` | `Vec<AccountInfo>` | List of all bets (`Bet` PDA) associated with this round.
 
 #### Arguments
 | Name         | Type      | Description                                      |
@@ -1067,7 +1066,7 @@ Upon successful settlement, the round status changes to **Ended**.
       - Determine the bet result with `is_bet_winner`
         - **True** → `bet.status = Won`
         - **False** → `bet.status = Lost`
-        - **Draw** → `bet.status = Draw` (refund amount)
+        - **Draw** → `bet.status = Draw`
       - Add `winners_weight` if winning
       - Save the bet status changes
     - Calculate the fee based on `config.fee_*_bps`
@@ -1284,14 +1283,13 @@ This program uses Program Derived Addresses (PDA) to create deterministic and pr
 - **Example**: Program ID + ["vault", round.key().to_bytes().as_ref()] → Vault PDA for round 1
 
 ### Bet Account
-- **Seeds**: `["bet", round, signer, bet_index]`
+- **Seeds**: `["bet", round, bet_index]`
 - **Purpose**: Stores individual user bet information for a specific round
 - **Unique**: Yes, one bet per user per round
 - **Parameters**:
   - `round`: Public key of the round account (32 bytes)
-  - `signer`: Public key of the user making the bet (32 bytes)
   - `bet_index`: u64 converted to bytes (little-endian) to allow multiple bets per user per round
-- **Example**: Program ID + ["bet", round.key().to_bytes().as_ref(), signer.key().as_ref(), &bet_index.to_le_bytes()] → Bet PDA for user in round 1
+- **Example**: Program ID + ["bet", round.key().to_bytes().as_ref(), &bet_index.to_le_bytes()] → Bet PDA for user in round 1
 
 ### Rust Implementation
 
@@ -1315,7 +1313,7 @@ let (vault_pda, vault_bump) = Pubkey::find_program_address(
 
 // Bet PDA
 let (bet_pda, bet_bump) = Pubkey::find_program_address(
-    &[b"bet", round.key().as_ref(), signer.key().as_ref(), &bet_index.to_le_bytes()],
+    &[b"bet", round.key().as_ref(), &bet_index.to_le_bytes()],
     program_id
 );
 ```
