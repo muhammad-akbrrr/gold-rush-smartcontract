@@ -60,4 +60,5 @@ pub const HUNDRED_PERCENT_BPS: u16 = 10_000;
 /// Limits
 pub const MAX_KEEPER_AUTHORITIES: usize = 5;
 pub const MAX_BETS_SETTLE: usize = 20;
-
+pub const MAX_GROUP_ASSETS: usize = 10;
+pub const MAX_WINNER_GROUP_IDS: usize = 10;

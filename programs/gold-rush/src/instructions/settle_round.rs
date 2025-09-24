@@ -162,9 +162,9 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
     let mut batch_winners_weight = 0u64;
 
     // calculate price changed
-    let locked_price = round.locked_price.unwrap();
+    let start_price = round.start_price.unwrap();
     let price_change: i64 = (effective_price as i64)
-        .checked_sub(locked_price as i64)
+        .checked_sub(start_price as i64)
         .ok_or(GoldRushError::Overflow)?;
 
     for acc_info in ctx.remaining_accounts.iter() {

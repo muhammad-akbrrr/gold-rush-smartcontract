@@ -102,7 +102,7 @@ sequenceDiagram
     loop every N minutes
       Keeper->>Program: fetch_scheduled_rounds()
       Keeper->>Program: auto_activate_if(now >= start_time)
-      Program-->>Keeper: ack (round.status = Active, locked_price set)
+      Program-->>Keeper: ack (round.status = Active, start_price set)
     end
 
     %% Keeper: settlement path (active/pending)
@@ -387,7 +387,7 @@ pub struct Round {
 
   // --- State ---
   pub status: RoundStatus,       // The current status of the round (Scheduled, Active, PendingSettlement, Ended).
-  pub locked_price: Option<u64>, // The price when round becomes Active.
+  pub start_price: Option<u64>,  // The price when round becomes Active.
   pub final_price: Option<u64>,  // The price when round is settled.
   pub total_pool: u64,           // The total amount of GRT bet in this round.
   pub total_bets: u64,           // The total number of bets placed in this round.
@@ -606,7 +606,7 @@ This ensures that even small gold changes may yield competitive rewards due to e
 
 When the round ends, the **keeper** settles it:
 
-1. The **Keeper** determines the winning bets by comparing `locked_price` and `final_price`.
+1. The **Keeper** determines the winning bets by comparing `start_price` and `final_price`.
 2. Mark all winning bets as `Won` and sum their weights:
 
 $$
@@ -998,7 +998,7 @@ When called, the round becomes Active, allowing users to place bets (place_bet()
 
 #### Logic
 1. Change `round.status` to `Active`
-2. Set `round.locked_price = asset_price`
+2. Set `round.start_price = asset_price`
 
 #### Emits / Side Effects
 - Change `Round` status from `Scheduled` → `Active`
@@ -1060,7 +1060,7 @@ Upon successful settlement, the round status changes to **Ended**.
     - Return (keeper will retry later)
 2. If `asset_price > 0`:
     - Set `round.final_price = asset_price`
-    - Calculate the price difference: `asset_price - round.locked_price`
+    - Calculate the price difference: `asset_price - round.start_price`
     - For each bet in `remaining_accounts`:
       - Validate the PDA bet
       - Determine the bet result with `is_bet_winner`

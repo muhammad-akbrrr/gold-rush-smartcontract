@@ -58,7 +58,7 @@ pub fn handler(ctx: Context<StartRound>, asset_price: u64) -> Result<()> {
 
     // set round fields
     round.status = RoundStatus::Active;
-    round.locked_price = Some(asset_price);
+    round.start_price = Some(asset_price);
 
     Ok(())
 }

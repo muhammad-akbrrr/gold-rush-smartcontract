@@ -14,14 +14,14 @@ pub struct Round {
 
     // --- State ---
     pub status: RoundStatus, // The current status of the round (Scheduled, Active, PendingSettlement, Ended).
-    pub locked_price: Option<u64>, // The price when round becomes Active.
-    pub final_price: Option<u64>, // The price when round is settled.
     pub total_pool: u64,     // The total amount of GRT bet in this round.
     pub total_bets: u64,     // The total number of bets placed in this round.
     pub total_fee_collected: u64, // The total fees collected for this round.
     pub total_reward_pool: u64, // The total reward pool after deducting fees.
     pub winners_weight: u64, // The total weight of winning bets (for reward calculation). Default to 0 if no winners.
     pub settled_bets: u64,   // Number of bets that have been processed (for incremental settlement)
+    #[max_len(MAX_WINNER_GROUP_IDS)]
+    pub winner_group_ids: Vec<u64>, // The IDs of the groups that won the round.
 
     // --- Metadata ---
     pub created_at: i64,         // The timestamp when the round was created.
