@@ -491,6 +491,11 @@ describe("Gold Rust Tests", () => {
         chunks.push(remainingAccounts.slice(i, i + chunkSize));
       }
 
+      // If there are no bets at all, still make one call to settled the round.
+      if (chunks.length === 0) {
+        chunks.push([]);
+      }
+
       for (let b = 0; b < chunks.length; b++) {
         const tx = await program.methods
           .settleRound(endPrice)

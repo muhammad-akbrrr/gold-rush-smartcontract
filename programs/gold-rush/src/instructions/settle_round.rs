@@ -96,137 +96,150 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
         GoldRushError::InvalidBettorsLength
     );
 
+    // if no bets at all, end round immediately
+    if round.total_bets == 0 {
+        round.status = RoundStatus::Ended;
+        if asset_price > 0 {
+            round.final_price = Some(asset_price);
+        }
+        round.settled_at = Some(Clock::get()?.unix_timestamp);
+        return Ok(());
+    }
+
+    // if asset price is 0, set round to pending settlement and return
     if asset_price == 0 {
         if round.status == RoundStatus::Active {
             round.status = RoundStatus::PendingSettlement;
         }
-    } else {
-        // If first batch, compute and lock fee and reward pool once
-        if round.total_reward_pool == 0 && round.total_fee_collected == 0 {
-            let fee_bps = match round.market_type {
-                MarketType::GoldPrice => config.fee_gold_price_bps,
-                MarketType::StockPrice => config.fee_stock_price_bps,
+
+        return Ok(());
+    }
+
+    // If first batch, compute and lock fee and reward pool once
+    if round.total_reward_pool == 0 && round.total_fee_collected == 0 {
+        let fee_bps = match round.market_type {
+            MarketType::GoldPrice => config.fee_gold_price_bps,
+            MarketType::StockPrice => config.fee_stock_price_bps,
+        };
+        let fee_amount = round
+            .total_pool
+            .checked_mul(fee_bps as u64)
+            .and_then(|x| x.checked_div(HUNDRED_PERCENT_BPS as u64))
+            .ok_or(GoldRushError::Overflow)?;
+        round.total_fee_collected = fee_amount;
+        round.total_reward_pool = round
+            .total_pool
+            .checked_sub(fee_amount)
+            .ok_or(GoldRushError::Underflow)?;
+
+        // transfer fee
+        if fee_amount > 0 {
+            let transfer_accounts = Transfer {
+                from: ctx.accounts.round_vault.to_account_info(),
+                to: ctx.accounts.treasury_token_account.to_account_info(),
+                authority: round.to_account_info(),
             };
-            let fee_amount = round
-                .total_pool
-                .checked_mul(fee_bps as u64)
-                .and_then(|x| x.checked_div(HUNDRED_PERCENT_BPS as u64))
-                .ok_or(GoldRushError::Overflow)?;
-            round.total_fee_collected = fee_amount;
-            round.total_reward_pool = round
-                .total_pool
-                .checked_sub(fee_amount)
-                .ok_or(GoldRushError::Underflow)?;
-
-            // transfer fee immediately on first batch
-            if fee_amount > 0 {
-                let transfer_accounts = Transfer {
-                    from: ctx.accounts.round_vault.to_account_info(),
-                    to: ctx.accounts.treasury_token_account.to_account_info(),
-                    authority: round.to_account_info(),
-                };
-                let round_bump = round.bump;
-                let round_id = round.id;
-                let seeds = &[
-                    ROUND_SEED.as_bytes(),
-                    &round_id.to_le_bytes(),
-                    &[round_bump],
-                ];
-                let signer = &[&seeds[..]];
-                let transfer_ctx = CpiContext::new_with_signer(
-                    ctx.accounts.token_program.to_account_info(),
-                    transfer_accounts,
-                    signer,
-                );
-                transfer(transfer_ctx, fee_amount)?;
-            }
-        }
-
-        let mut batch_winners_weight = 0u64;
-
-        // calculate price changed
-        let locked_price = round.locked_price.unwrap();
-        let price_change: i64 = (asset_price as i64)
-            .checked_sub(locked_price as i64)
-            .ok_or(GoldRushError::Overflow)?;
-
-        for acc_info in ctx.remaining_accounts.iter() {
-            // 1) ownership check
-            require_keys_eq!(
-                *acc_info.owner,
-                *ctx.program_id,
-                GoldRushError::InvalidBetAccount
+            let round_bump = round.bump;
+            let round_id = round.id;
+            let seeds = &[
+                ROUND_SEED.as_bytes(),
+                &round_id.to_le_bytes(),
+                &[round_bump],
+            ];
+            let signer = &[&seeds[..]];
+            let transfer_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                transfer_accounts,
+                signer,
             );
+            transfer(transfer_ctx, fee_amount)?;
+        }
+    }
 
-            // 2) borrow mut data
-            let mut data = acc_info.try_borrow_mut_data()?;
+    let mut batch_winners_weight = 0u64;
 
-            // 3) deserialize
-            let mut bet: Bet = Bet::try_deserialize(&mut &data[..])
-                .map_err(|_| GoldRushError::InvalidBetAccountData)?;
+    // calculate price changed
+    let locked_price = round.locked_price.unwrap();
+    let price_change: i64 = (asset_price as i64)
+        .checked_sub(locked_price as i64)
+        .ok_or(GoldRushError::Overflow)?;
 
-            // 4) validate expected PDA
-            let expected_pda = Pubkey::find_program_address(
-                &[
-                    BET_SEED.as_bytes(),
-                    round.key().as_ref(),
-                    &bet.id.to_le_bytes(),
-                ],
-                ctx.program_id,
-            )
-            .0;
-            require_keys_eq!(
-                *acc_info.key,
-                expected_pda,
-                GoldRushError::InvalidBetAccount
-            );
+    for acc_info in ctx.remaining_accounts.iter() {
+        // 1) ownership check
+        require_keys_eq!(
+            *acc_info.owner,
+            *ctx.program_id,
+            GoldRushError::InvalidBetAccount
+        );
 
-            // 5) decide win/loss/draw
-            let is_winner = is_bet_winner(bet.direction.clone(), price_change);
-            match is_winner {
-                None => {
-                    bet.status = BetStatus::Draw;
-                }
-                Some(true) => {
-                    bet.status = BetStatus::Won;
-                    batch_winners_weight = batch_winners_weight
-                        .checked_add(bet.weight)
-                        .ok_or(GoldRushError::Overflow)?;
-                }
-                Some(false) => {
-                    bet.status = BetStatus::Lost;
-                }
+        // 2) borrow mut data
+        let mut data = acc_info.try_borrow_mut_data()?;
+
+        // 3) deserialize
+        let mut bet: Bet = Bet::try_deserialize(&mut &data[..])
+            .map_err(|_| GoldRushError::InvalidBetAccountData)?;
+
+        // 4) validate expected PDA
+        let expected_pda = Pubkey::find_program_address(
+            &[
+                BET_SEED.as_bytes(),
+                round.key().as_ref(),
+                &bet.id.to_le_bytes(),
+            ],
+            ctx.program_id,
+        )
+        .0;
+        require_keys_eq!(
+            *acc_info.key,
+            expected_pda,
+            GoldRushError::InvalidBetAccount
+        );
+
+        // 5) decide win/loss/draw
+        let is_winner = is_bet_winner(bet.direction.clone(), price_change);
+        match is_winner {
+            None => {
+                bet.status = BetStatus::Draw;
             }
-
-            // 6) serialize back
-            let serialized = bet
-                .try_to_vec()
-                .map_err(|_| GoldRushError::SerializeError)?;
-            if serialized.len() > data[8..].len() {
-                return Err(GoldRushError::AccountDataTooSmall.into());
+            Some(true) => {
+                bet.status = BetStatus::Won;
+                batch_winners_weight = batch_winners_weight
+                    .checked_add(bet.weight)
+                    .ok_or(GoldRushError::Overflow)?;
             }
-            data[8..8 + serialized.len()].copy_from_slice(&serialized);
+            Some(false) => {
+                bet.status = BetStatus::Lost;
+            }
         }
 
-        // accumulate progress
-        round.winners_weight = round
-            .winners_weight
-            .checked_add(batch_winners_weight)
-            .ok_or(GoldRushError::Overflow)?;
-        round.settled_bets = round
-            .settled_bets
-            .checked_add(ctx.remaining_accounts.len() as u64)
-            .ok_or(GoldRushError::Overflow)?;
-
-        // finalize only when all bets processed
-        if round.settled_bets >= round.total_bets {
-            round.status = RoundStatus::Ended;
-            round.final_price = Some(asset_price);
-            round.settled_at = Some(Clock::get()?.unix_timestamp);
-        } else if round.status == RoundStatus::Active {
-            // mark as pending to indicate partial settlement in progress
-            round.status = RoundStatus::PendingSettlement;
+        // 6) serialize back
+        let serialized = bet
+            .try_to_vec()
+            .map_err(|_| GoldRushError::SerializeError)?;
+        if serialized.len() > data[8..].len() {
+            return Err(GoldRushError::AccountDataTooSmall.into());
         }
+        data[8..8 + serialized.len()].copy_from_slice(&serialized);
+    }
+
+    // accumulate progress
+    round.winners_weight = round
+        .winners_weight
+        .checked_add(batch_winners_weight)
+        .ok_or(GoldRushError::Overflow)?;
+    round.settled_bets = round
+        .settled_bets
+        .checked_add(ctx.remaining_accounts.len() as u64)
+        .ok_or(GoldRushError::Overflow)?;
+
+    // finalize only when all bets processed
+    if round.settled_bets >= round.total_bets {
+        round.status = RoundStatus::Ended;
+        round.final_price = Some(asset_price);
+        round.settled_at = Some(Clock::get()?.unix_timestamp);
+    } else if round.status == RoundStatus::Active {
+        // mark as pending to indicate partial settlement in progress
+        round.status = RoundStatus::PendingSettlement;
     }
 
     Ok(())
