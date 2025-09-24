@@ -20,12 +20,14 @@ pub struct ClaimReward<'info> {
     pub round: Account<'info, Round>,
 
     #[account(
+        mut,
         seeds = [BET_SEED.as_bytes(), round.key().as_ref(), &bet.id.to_le_bytes()],
         bump
     )]
     pub bet: Account<'info, Bet>,
 
     #[account(
+        mut,
         seeds = [VAULT_SEED.as_bytes(), round.key().as_ref()],
         bump
     )]
@@ -66,8 +68,13 @@ impl<'info> ClaimReward<'info> {
         );
 
         require!(
-            matches!(self.bet.status, BetStatus::Won | BetStatus::Draw,),
-            GoldRushError::BetNotWonOrDraw
+            self.bet.status != BetStatus::Pending,
+            GoldRushError::ClaimPendingBet
+        );
+
+        require!(
+            self.bet.status != BetStatus::Lost,
+            GoldRushError::ClaimLosingBet
         );
 
         require!(self.bet.claimed == false, GoldRushError::AlreadyClaimed);
@@ -87,22 +94,27 @@ pub fn handler(ctx: Context<ClaimReward>) -> Result<()> {
     let reward_amount = match bet.status {
         BetStatus::Won => bet
             .weight
-            .checked_div(round.winners_weight)
-            .and_then(|x| x.checked_mul(round.total_reward_pool))
-            .ok_or(GoldRushError::Overflow)?,
+            .checked_mul(round.total_reward_pool)
+            .and_then(|x| x.checked_div(round.winners_weight))
+            .ok_or(GoldRushError::Underflow)?,
         BetStatus::Draw => bet.amount,
-        _ => return Err(GoldRushError::BetNotWonOrDraw.into()),
+        BetStatus::Pending => return Err(GoldRushError::ClaimPendingBet.into()),
+        BetStatus::Lost => return Err(GoldRushError::ClaimLosingBet.into()),
     };
 
     // transfer from vault to signer
     let transfer_accounts = Transfer {
         from: ctx.accounts.round_vault.to_account_info(),
         to: ctx.accounts.bettor_token_account.to_account_info(),
-        authority: ctx.accounts.round_vault.to_account_info(),
+        authority: round.to_account_info(),
     };
-    let round_key = round.key();
-    let vault_bump = ctx.bumps.round_vault;
-    let seeds = &[VAULT_SEED.as_bytes(), round_key.as_ref(), &[vault_bump]];
+    let round_id = round.id;
+    let round_bump = round.bump;
+    let seeds = &[
+        ROUND_SEED.as_bytes(),
+        &round_id.to_le_bytes(),
+        &[round_bump],
+    ];
     let signer = &[&seeds[..]];
     let transfer_ctx = CpiContext::new_with_signer(
         ctx.accounts.token_program.to_account_info(),

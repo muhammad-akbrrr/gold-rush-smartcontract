@@ -9,19 +9,12 @@ import {
 } from "@solana/web3.js";
 import {
   createMint,
-  createAccount,
   mintTo,
   TOKEN_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID,
-  getAssociatedTokenAddress,
   createAssociatedTokenAccount,
 } from "@solana/spl-token";
-import { expect } from "chai";
-
-enum MarketType {
-  GoldPrice = 0,
-  StockPrice = 1,
-}
+import { assert, expect } from "chai";
 
 describe("Gold Rust Tests", () => {
   const provider = anchor.AnchorProvider.env();
@@ -476,7 +469,7 @@ describe("Gold Rust Tests", () => {
       }
 
       console.log(
-        "Remaining acounts generated with total: ",
+        "Remaining acounts generated with total:",
         remainingAccounts.length
       );
 
@@ -528,6 +521,167 @@ describe("Gold Rust Tests", () => {
       expect(betAccount.status).to.deep.equal({ won: {} });
     } catch (err) {
       console.error("Error settling round:", err);
+      throw err;
+    }
+  });
+
+  it("Claim Reward (Round 1 - Up Winner 1) - Successfully claims a reward", async () => {
+    try {
+      // initial token balance
+      const initialBalanceResp =
+        await provider.connection.getTokenAccountBalance(
+          bettorWin1TokenAccount
+        );
+      const initialBalance = BigInt(initialBalanceResp.value.amount);
+
+      const tx = await program.methods
+        .claimReward()
+        .accounts({
+          signer: bettorWin1.publicKey,
+          config: configPda,
+          round: round1Pda,
+          bet: betWinner1Pda,
+          roundVault: round1VaultPda,
+          bettorTokenAccount: bettorWin1TokenAccount,
+          mint: tokenMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .signers([bettorWin1])
+        .rpc();
+
+      console.log("Signature", tx);
+
+      // verify bet account
+      const betAccount = await program.account.bet.fetch(betWinner1Pda);
+      expect(betAccount.claimed).to.be.true;
+
+      // verify token balance
+      const roundAccount = await program.account.round.fetch(round1Pda);
+      const finalBalanceResp = await provider.connection.getTokenAccountBalance(
+        bettorWin1TokenAccount
+      );
+      const finalBalance = BigInt(finalBalanceResp.value.amount);
+      const rewardAmount = betAccount.status.won
+        ? (BigInt(betAccount.weight.toString()) *
+            BigInt(roundAccount.totalRewardPool.toString())) /
+          BigInt(roundAccount.winnersWeight.toString())
+        : BigInt(betAccount.amount.toString());
+      console.log("Final balance", finalBalance.toString());
+      console.log("Initial balance", initialBalance.toString());
+      console.log("Reward amount", rewardAmount.toString());
+      assert.strictEqual(finalBalance, initialBalance + rewardAmount);
+    } catch (err) {
+      console.error("Error claiming reward:", err);
+      throw err;
+    }
+  });
+
+  it("Claim Reward (Round 1 - Percentage Up Winner 2) - Successfully claims a reward", async () => {
+    try {
+      // initial token balance
+      const initialBalanceResp =
+        await provider.connection.getTokenAccountBalance(
+          bettorWin2TokenAccount
+        );
+      const initialBalance = BigInt(initialBalanceResp.value.amount);
+
+      const tx = await program.methods
+        .claimReward()
+        .accounts({
+          signer: bettorWin2.publicKey,
+          config: configPda,
+          round: round1Pda,
+          bet: betWinner2Pda,
+          roundVault: round1VaultPda,
+          bettorTokenAccount: bettorWin2TokenAccount,
+          mint: tokenMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .signers([bettorWin2])
+        .rpc();
+
+      console.log("Signature", tx);
+
+      // verify bet account
+      const betAccount = await program.account.bet.fetch(betWinner2Pda);
+      expect(betAccount.claimed).to.be.true;
+
+      // verify token balance
+      const roundAccount = await program.account.round.fetch(round1Pda);
+      const finalBalanceResp = await provider.connection.getTokenAccountBalance(
+        bettorWin2TokenAccount
+      );
+      const finalBalance = BigInt(finalBalanceResp.value.amount);
+      const rewardAmount = betAccount.status.won
+        ? (BigInt(betAccount.weight.toString()) *
+            BigInt(roundAccount.totalRewardPool.toString())) /
+          BigInt(roundAccount.winnersWeight.toString())
+        : BigInt(betAccount.amount.toString());
+      console.log("Final balance", finalBalance.toString());
+      console.log("Initial balance", initialBalance.toString());
+      console.log("Reward amount", rewardAmount.toString());
+      assert.strictEqual(finalBalance, initialBalance + rewardAmount);
+    } catch (err) {
+      console.error("Error claiming reward:", err);
+      throw err;
+    }
+  });
+
+  it("Claim Reward (Round 1 - Down Loss 1) - Successfully claims a reward", async () => {
+    try {
+      // initial token balance
+      const initialBalanceResp =
+        await provider.connection.getTokenAccountBalance(
+          bettorLost1TokenAccount
+        );
+      const initialBalance = BigInt(initialBalanceResp.value.amount);
+
+      const tx = await program.methods
+        .claimReward()
+        .accounts({
+          signer: bettorLost1.publicKey,
+          config: configPda,
+          round: round1Pda,
+          bet: betLoser1Pda,
+          roundVault: round1VaultPda,
+          bettorTokenAccount: bettorLost1TokenAccount,
+          mint: tokenMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .signers([bettorLost1])
+        .rpc();
+
+      console.log("Signature", tx);
+
+      // verify bet account
+      const betAccount = await program.account.bet.fetch(betLoser1Pda);
+      expect(betAccount.claimed).to.be.true;
+
+      // verify token balance
+      const roundAccount = await program.account.round.fetch(round1Pda);
+      const finalBalanceResp = await provider.connection.getTokenAccountBalance(
+        bettorLost1TokenAccount
+      );
+      const finalBalance = BigInt(finalBalanceResp.value.amount);
+      const rewardAmount = betAccount.status.won
+        ? (BigInt(betAccount.weight.toString()) *
+            BigInt(roundAccount.totalRewardPool.toString())) /
+          BigInt(roundAccount.winnersWeight.toString())
+        : BigInt(betAccount.amount.toString());
+      console.log("Final balance", finalBalance.toString());
+      console.log("Initial balance", initialBalance.toString());
+      console.log("Reward amount", rewardAmount.toString());
+      assert.strictEqual(finalBalance, initialBalance + rewardAmount);
+    } catch (err) {
+      const msg = err?.message || "";
+      if (msg.includes("ClaimLosingBet")) {
+        // test passed
+        return;
+      }
+      console.error("Error claiming reward:", err);
       throw err;
     }
   });

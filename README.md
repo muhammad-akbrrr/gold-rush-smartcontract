@@ -1252,7 +1252,8 @@ $$
 |--------------------------------|-------------------------------------------------------------|
 | `Unauthorized` | If `bet.user != bettor.key()` |
 | `RoundNotEnded` | If `round.status != Ended` |
-| `BetNotWon` | If `bet.status != Won` |
+| `ClaimPendingBet` | If `bet.status == Pending` |
+| `ClaimLosingBet` | If `bet.status == Lost` |
 | `AlreadyClaimed` | If `bet.claimed == true` |
 ---
 

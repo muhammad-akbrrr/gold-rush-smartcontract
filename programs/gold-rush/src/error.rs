@@ -124,6 +124,12 @@ pub enum GoldRushError {
     #[msg("Bet status is neither Won nor Draw")]
     BetNotWonOrDraw = 0x5009,
 
+    #[msg("Bet status is Pending, cannot claim reward")]
+    ClaimPendingBet = 0x5010,
+
+    #[msg("Bet status is Lost, cannot claim reward")]
+    ClaimLosingBet = 0x5011,
+
     // Account & Token Errors (0x6000 - 0x6999)
     #[msg("Invalid token account")]
     InvalidTokenAccount = 0x6000,
