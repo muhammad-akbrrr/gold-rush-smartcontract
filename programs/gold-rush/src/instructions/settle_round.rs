@@ -90,6 +90,9 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
     let config = &ctx.accounts.config;
     let round = &mut ctx.accounts.round;
 
+    // Prefer already-set final price if available; otherwise use provided asset_price
+    let effective_price = round.final_price.unwrap_or(asset_price);
+
     // validate remaining accounts
     require!(
         ctx.remaining_accounts.len() <= MAX_BETS_SETTLE,
@@ -99,15 +102,15 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
     // if no bets at all, end round immediately
     if round.total_bets == 0 {
         round.status = RoundStatus::Ended;
-        if asset_price > 0 {
-            round.final_price = Some(asset_price);
+        if effective_price > 0 {
+            round.final_price = Some(effective_price);
         }
         round.settled_at = Some(Clock::get()?.unix_timestamp);
         return Ok(());
     }
 
-    // if asset price is 0, set round to pending settlement and return
-    if asset_price == 0 {
+    // if effective price is 0, set round to pending settlement and return
+    if effective_price == 0 {
         if round.status == RoundStatus::Active {
             round.status = RoundStatus::PendingSettlement;
         }
@@ -160,7 +163,7 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
 
     // calculate price changed
     let locked_price = round.locked_price.unwrap();
-    let price_change: i64 = (asset_price as i64)
+    let price_change: i64 = (effective_price as i64)
         .checked_sub(locked_price as i64)
         .ok_or(GoldRushError::Overflow)?;
 
@@ -235,7 +238,7 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
     // finalize only when all bets processed
     if round.settled_bets >= round.total_bets {
         round.status = RoundStatus::Ended;
-        round.final_price = Some(asset_price);
+        round.final_price = Some(effective_price);
         round.settled_at = Some(Clock::get()?.unix_timestamp);
     } else if round.status == RoundStatus::Active {
         // mark as pending to indicate partial settlement in progress
