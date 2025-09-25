@@ -62,8 +62,12 @@ pub mod gold_rush {
         insert_asset::handler(ctx, symbol)
     }
 
-    pub fn start_round(ctx: Context<StartRound>, asset_price: u64) -> Result<()> {
-        start_round::handler(ctx, asset_price)
+    pub fn capture_start_price(ctx: Context<CaptureStartPrice>) -> Result<()> {
+        capture_start_price::handler(ctx)
+    }
+
+    pub fn start_round(ctx: Context<StartRound>) -> Result<()> {
+        start_round::handler(ctx)
     }
 
     pub fn place_bet(ctx: Context<PlaceBet>, amount: u64, direction: BetDirection) -> Result<()> {

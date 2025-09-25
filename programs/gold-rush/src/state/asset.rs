@@ -7,6 +7,7 @@ pub struct Asset {
     pub id: u64,
     pub group: Pubkey,
     pub round: Pubkey,
+    pub price_feed_account: Pubkey,
 
     // --- State ---
     pub symbol: [u8; 8],

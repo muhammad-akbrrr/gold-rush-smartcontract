@@ -151,4 +151,17 @@ pub enum GoldRushError {
     Overflow = 0x7000,
     #[msg("Mathematical underflow detected.")]
     Underflow = 0x7001,
+
+    // Assets Management Errors (0x8000 - 0x8999)
+    #[msg("Invalid bet account provided")]
+    InvalidAssetAccount = 0x8000,
+
+    #[msg("Invalid asset account data provided")]
+    InvalidAssetAccountData = 0x8001,
+
+    #[msg("Pyth error")]
+    PythError = 0x8002,
+
+    #[msg("Invalid price feed account")]
+    InvalidPriceFeedAccount = 0x8003,
 }

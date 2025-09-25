@@ -1,1 +1,4 @@
-// TODO: Implement settle group instruction
+use anchor_lang::prelude::*;
+
+// #[derive(Accounts)]
+// pub struct Settle

@@ -23,7 +23,7 @@ pub struct StartRound<'info> {
 }
 
 impl<'info> StartRound<'info> {
-    pub fn validate(&self, asset_price: u64) -> Result<()> {
+    pub fn validate(&self) -> Result<()> {
         require!(
             self.config.status == ContractStatus::Active,
             GoldRushError::ProgramPaused
@@ -44,15 +44,13 @@ impl<'info> StartRound<'info> {
             GoldRushError::RoundNotReady
         );
 
-        require!(asset_price > 0, GoldRushError::InvalidAssetPrice);
-
         Ok(())
     }
 }
 
-pub fn handler(ctx: Context<StartRound>, asset_price: u64) -> Result<()> {
+pub fn handler(ctx: Context<StartRound>) -> Result<()> {
     // validate
-    ctx.accounts.validate(asset_price)?;
+    ctx.accounts.validate()?;
 
     let round = &mut ctx.accounts.round;
 

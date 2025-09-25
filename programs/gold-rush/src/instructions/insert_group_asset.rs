@@ -63,8 +63,8 @@ pub fn handler(ctx: Context<InsertGroupAsset>, symbol: [u8; 8]) -> Result<()> {
     group_asset.bump = ctx.bumps.group_asset;
 
     // set round fields
-    round.total_bets = round
-        .total_bets
+    round.total_groups = round
+        .total_groups
         .checked_add(1)
         .ok_or(GoldRushError::Overflow)?;
 

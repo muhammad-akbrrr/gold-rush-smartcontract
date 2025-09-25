@@ -66,3 +66,7 @@ pub const MAX_KEEPER_AUTHORITIES: usize = 5;
 pub const MAX_BETS_SETTLE: usize = 20;
 pub const MAX_GROUP_ASSETS: usize = 10;
 pub const MAX_WINNER_GROUP_IDS: usize = 10;
+pub const ASSET_PRICE_STALENESS_THRESHOLD_SECONDS: i64 = 60;
+
+/// Price
+pub const ASSET_PRICE_DECIMALS: i32 = 6;
