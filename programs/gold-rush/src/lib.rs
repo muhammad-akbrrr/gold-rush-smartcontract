@@ -54,6 +54,14 @@ pub mod gold_rush {
         create_round::handler(ctx, market_type, start_time, end_time)
     }
 
+    pub fn insert_group_asset(ctx: Context<InsertGroupAsset>, symbol: [u8; 8]) -> Result<()> {
+        insert_group_asset::handler(ctx, symbol)
+    }
+
+    pub fn insert_asset(ctx: Context<InsertAsset>, symbol: [u8; 8]) -> Result<()> {
+        insert_asset::handler(ctx, symbol)
+    }
+
     pub fn start_round(ctx: Context<StartRound>, asset_price: u64) -> Result<()> {
         start_round::handler(ctx, asset_price)
     }

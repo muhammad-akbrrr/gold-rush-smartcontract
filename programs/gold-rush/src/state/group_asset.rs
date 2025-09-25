@@ -5,7 +5,7 @@ use anchor_lang::prelude::*;
 pub struct GroupAsset {
     // --- Identity ---
     pub id: u64,
-    pub group: Pubkey,
+    pub round: Pubkey,
 
     // --- State ---
     pub symbol: [u8; 8],

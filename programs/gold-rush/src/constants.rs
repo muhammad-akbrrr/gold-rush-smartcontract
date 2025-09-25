@@ -6,6 +6,10 @@ pub const CONFIG_SEED: &str = "config";
 #[constant]
 pub const ROUND_SEED: &str = "round";
 #[constant]
+pub const GROUP_ASSET_SEED: &str = "group_asset";
+#[constant]
+pub const ASSET_SEED: &str = "asset";
+#[constant]
 pub const VAULT_SEED: &str = "vault";
 #[constant]
 pub const BET_SEED: &str = "bet";

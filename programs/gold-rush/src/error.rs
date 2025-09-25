@@ -77,6 +77,9 @@ pub enum GoldRushError {
     #[msg("Round duration is invalid")]
     InvalidDuration = 0x3009,
 
+    #[msg("Max assets reached")]
+    MaxAssetsReached = 0x300a,
+
     // Betting Errors (0x4000 - 0x4999)
     #[msg("Bet amount is below minimum required")]
     BetBelowMinimum = 0x4000,

@@ -11,6 +11,8 @@ pub struct Bet {
 
     // --- Bet Info ---
     pub amount: u64,             // The amount of GRT bet.
+    pub group: Pubkey,           // The group this bet is associated with.
+    pub asset: Pubkey,           // The asset this bet is associated with.
     pub direction: BetDirection, // The type of bet (Up, Down, PercentageChange).
     pub claimed: bool,           // Whether the reward has been claimed.
     pub weight: u64,             // The weight of the bet (for reward calculation).

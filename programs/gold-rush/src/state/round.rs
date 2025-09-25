@@ -22,6 +22,7 @@ pub struct Round {
     pub settled_bets: u64,   // Number of bets that have been processed (for incremental settlement)
     #[max_len(MAX_WINNER_GROUP_IDS)]
     pub winner_group_ids: Vec<u64>, // The IDs of the groups that won the round.
+    pub total_groups: u64,   // The total number of groups created in this round.
 
     // --- Metadata ---
     pub created_at: i64,         // The timestamp when the round was created.
