@@ -41,6 +41,11 @@ impl<'info> InsertGroupAsset<'info> {
             GoldRushError::ProgramPaused
         );
 
+        require!(
+            self.signer.key() == self.config.admin,
+            GoldRushError::Unauthorized
+        );
+
         Ok(())
     }
 }
