@@ -3,6 +3,7 @@
 pub mod capture_start_price;
 pub mod claim_reward;
 pub mod create_round;
+pub mod emergency_pause;
 pub mod initialize;
 pub mod insert_asset;
 pub mod insert_group_asset;
@@ -17,6 +18,7 @@ pub mod update_config;
 pub use capture_start_price::*;
 pub use claim_reward::*;
 pub use create_round::*;
+pub use emergency_pause::*;
 pub use initialize::*;
 pub use insert_asset::*;
 pub use insert_group_asset::*;

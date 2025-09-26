@@ -15,12 +15,6 @@ pub enum GoldRushError {
     #[msg("Program is in emergency pause state")]
     EmergencyPaused = 0x1003,
 
-    #[msg("Program is already paused")]
-    AlreadyPaused = 0x1004,
-
-    #[msg("Program is already active")]
-    AlreadyActive = 0x1005,
-
     // Configuration Errors (0x2000 - 0x2999)
     #[msg("Fee basis points must be less than 10000")]
     InvalidFee = 0x2000,
@@ -69,6 +63,18 @@ pub enum GoldRushError {
 
     #[msg("New minimum bet amount must be greater than 0")]
     InvalidNewMinBetAmount = 0x2015,
+
+    #[msg("Program is already paused")]
+    AlreadyPaused = 0x2016,
+
+    #[msg("Program is already active")]
+    AlreadyActive = 0x2017,
+
+    #[msg("Program is already in emergency pause")]
+    AlreadyEmergencyPaused = 0x2018,
+
+    #[msg("Program is not in emergency pause")]
+    NotEmergencyPaused = 0x2019,
 
     // Round Management Errors (0x3000 - 0x3999)
     #[msg("Invalid timestamps: start_time must be less than end_time and in the future")]
