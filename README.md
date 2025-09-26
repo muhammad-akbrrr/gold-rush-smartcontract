@@ -1,53 +1,63 @@
 # Gold Rush Smart Contract
 
-Gold Rush is a token-based betting smart contract that allows users to bet on the price movement of gold or specific stocks within a specific time period (called a round).
+Gold Rush is a token-based betting smart contract supporting two game modes:
+- Single-Asset: bet on the price movement of a single asset (e.g., gold or a stock) within a round window.
+- Group Battle: bet on which asset group achieves the highest average gain across its constituent assets within a round.
 
 Users place bets using Gold Rush Tokens (GRT), and winners receive rewards based on the outcome of the round.
 
 ## Overview
-- Each round has a start time (start_time) and a end time (end_time), during which users can place or withdraw bets before the cutoff.
-- After the round ends, the Keeper triggers a settlement process to determine the winner based on the price from the Oracle.
-- Rewards are not automatically distributed but are stored as a claimable amount that winners can claim manually.
+- Each round has a start time (start_time) and an end time (end_time). Users can place or withdraw bets before the cutoff.
+- The program supports Single-Asset and Group Battle rounds:
+  - Single-Asset: winners depend on the sign of price change between start and end.
+  - Group Battle: winners depend on the groups with the highest average growth (avg_growth_rate_bps) computed from multiple assets.
+- After the round ends, the Keeper triggers settlement to determine winners and finalize rewards.
+- Rewards are not automatically distributed; they are claimable by winners after settlement.
 
 ## Features
 
 ### Betting System
 
-- Users can place bets on the price movement of gold or specific stocks (e.g., up/down).
+- Users can place bets on:
+  - Single-Asset rounds (Up/Down/PercentageChange against a single price), or
+  - Group Battle rounds (Up/Down/PercentageChange against a group’s average gain).
 - Bets are placed using GRT tokens.
 - Bets can be withdrawn as long as they have not exceeded the cutoff.
 
 ### Round Lifecycle
 
 - Admins create new rounds with a start_time and end_time.
-- After the start_time, the round automatically becomes Active and accepts bets.
-- After the end_time, bets are locked and the round enters the Settlement process and the outcome is determined.
+- After the start_time, the round becomes Active and accepts bets.
+- After the end_time, bets are locked and the round enters Settlement to determine outcomes.
 
 ### Keeper Automation
 
 - The Keeper is responsible for triggering:
     - Round activation when the start_time is reached.
-    - Round settlement when the end_time is reacged.
-- The Keeper retrieves prices from the Oracle, calculates winners, and marks claimable prizes.
-- If the price is not retrieved, the round is assigned a PendingSettlement status so it can be retried.
+    - Round settlement when the end_time is reached.
+- For Group Battle, the Keeper captures start/end prices for multiple assets, finalizes per-group averages, selects winner groups, then settles bets.
+- If oracle data is unavailable, the round is marked PendingSettlement and retried later.
 
 ### Price Oracle
 
-- Retrieves real-time prices from an external source (Chainlink or other whitelisted sources).
-- Price data is only used during settlement process.
+- Retrieves prices via whitelisted on-chain oracles (e.g., Pyth). For Group Battle, multiple price accounts are read per instruction via remaining accounts.
+- Price data is used to capture start/end prices and to compute winners during settlement.
 
 ### Rewards & Claims
 
-- Rewards are calculated from the total pool of losing bets and distributed proportionally to winners.
-- Rewards are not sent automatically but are stored in the bet as claimable_amount.
-- Users can claim rewards after settlement, if claimable_amount > 0.
+- Rewards are calculated from the total pool minus fees and distributed proportionally to winners by weight.
+- Winners are determined by:
+  - Single-Asset: price change sign between start and end.
+  - Group Battle: groups with max avg_growth_rate_bps; bets win if they chose a winning group and the direction matches the group’s growth sign (or percentage sign for PercentageChange bets).
+- Rewards are not sent automatically; they are stored as claimable amounts that winners can claim after settlement.
 
 ### Admin Operations
 
 - Create a new round (with a future schedule).
-- Manage system configurations (fees, oracle, etc.).
-- Pause/unpause the program in an emergency.
-- Cancel a round (before settlement) to return all bets.
+- Insert GroupAsset(s) and Asset(s) for Group Battle rounds.
+- Manage system configurations (fees, keeper authorities, token mint, treasury, factors).
+- Pause/unpause and emergency pause/unpause the program.
+- Cancel a round (before settlement) to refund all bets.
 
 ### Emergency & Safety
 
@@ -66,69 +76,74 @@ sequenceDiagram
     participant Treasury
 
     %% Round creation
-    Admin->>Program: create_round(round_id, asset, start_time, end_time, ...)
+    Admin->>Program: create_round(round_id, market_type, start_time, end_time)
     Note right of Program: round.status = Scheduled
 
     %% User actions (place / withdraw)
-    User->>Program: place_bet(round_id, bet_type, amount)
+    User->>Program: place_bet - by round_id
     alt Before round end_time
       Program-->>Program: save bet + lock amount in vault
-      Program-->>User: accept_bet (tx confirmed)
+      Program-->>User: accept_bet - tx confirmed
     else After round end_time
-      Program-->>User: reject_bet ("cutoff reached")
+      Program-->>User: reject_bet - cutoff reached
     end
 
-    User->>Program: withdraw_bet(round_id, bet_id)
+    User->>Program: withdraw_bet - by round_id and bet_id
     alt Before round end_time
       Program-->>User: refund_confirmed
     else After round end_time
-      Program-->>User: reject_withdraw ("cutoff reached")
+      Program-->>User: reject_withdraw - cutoff reached
     end
 
     %% Admin: cancel round (hard cancel)
     Admin->>Program: cancel_round(round_id)
     alt round.status in {Scheduled, Active, PendingSettlement}
-      Program-->>Program: for each bet -> refund bet.amount from vault
+      Program-->>Program: refund all bets from vault
       Program-->>Treasury: process refunds
       Treasury-->>User: return stake
-      Program-->>Program: close all Bet accounts
-      Program-->>Program: close Round account
-      Program-->>Admin: ack (round cancelled & cleaned up)
+      Program-->>Program: close Bet and Round accounts
+      Program-->>Admin: ack - cancelled
     else round.status == Ended
-      Program-->>Admin: reject_cancel ("round already settled")
+      Program-->>Admin: reject_cancel ("already settled")
     end
 
-    %% Keeper: activate scheduled rounds
+    %% Keeper: activation & price capture
     loop every N minutes
       Keeper->>Program: fetch_scheduled_rounds()
-      Keeper->>Program: auto_activate_if(now >= start_time)
-      Program-->>Keeper: ack (round.status = Active, start_price set)
+      alt market_type == GroupBattle
+        Keeper->>Program: capture_start_price - pairs of asset and pyth, per group, parallel
+        Program-->>Program: set asset.start_price (idempotent)
+        Keeper->>Program: start_round - activate by round_id
+        Program-->>Keeper: ack - round.status set Active
+      else market_type == SingleAsset
+        Keeper->>Oracle: get start price
+        Keeper->>Program: start_round - with start price
+        Program-->>Keeper: ack - round.status set Active
+      end
     end
 
     %% Keeper: settlement path (active/pending)
     loop every N minutes
-      Keeper->>Program: fetch_rounds(status in {Active, PendingSettlement})
-      Keeper->>Program: is_due_for_settlement(round_id)?
+      Keeper->>Program: fetch_rounds - Active or PendingSettlement
+      Keeper->>Program: is_due_for_settlement - check
       alt Not due
         Program-->>Keeper: skip
       else Due for settlement
-        %% Keeper obtains price from Oracle (off-chain)
-        loop Retry up to 3 times
-          Keeper->>Oracle: get_price(asset)
-          Oracle-->>Keeper: price or error
-        end
-
-        alt Price received
-          Keeper->>Program: settle_round(round_id, final_price)
-          Program-->>Program: set bet.status = Won/Lost
-          Program-->>Program: sum winners_weight → round.winners_weight
-          Program-->>Program: calculate fee = total_pool * fee_bps / 10000
-          Program-->>Program: update total_fee_collected and total_reward_pool
-          Program-->>Treasury: transfer fee from vault
-          Program-->>Keeper: ack (round.status = Ended)
-        else Oracle failed
-          Keeper->>Program: set_pending_settlement(round_id, reason="oracle_fail")
-          Program-->>Keeper: ack (round.status = PendingSettlement)
+        alt market_type == GroupBattle
+          Keeper->>Program: capture_end_price - pairs of asset and pyth, parallel
+          Program-->>Program: set asset.final_price + growth_rate_bps
+          Keeper->>Program: finalize_group_asset - per group assets
+          Program-->>Program: set totals + avg_growth_rate_bps
+          Keeper->>Program: finalize_groups_for_round - all group assets
+          Program-->>Program: set winner_group_ids
+          Keeper->>Program: settle_round - max 20 bets per call
+          Program-->>Program: mark Won or Lost using winner_group_ids and transfer fee
+          Program-->>Keeper: ack - round.status set Ended
+        else market_type == SingleAsset
+          Keeper->>Oracle: get final price
+          Keeper->>Program: settle_round - final price and max 20 bets per call
+          Program-->>Program: mark Won or Lost via price change and transfer fee
+          Program-->>Keeper: ack - round.status set Ended
         end
       end
     end
@@ -136,7 +151,6 @@ sequenceDiagram
     %% After settlement, user claims reward
     User->>Program: claim_reward(round_id, bet_id)
     alt Bet is Won and not claimed
-      Program-->>Program: reward = bet.weight / winners_weight * total_reward_pool
       Program-->>User: transfer reward from vault
       Program-->>Program: mark bet.claimed = true
     else Bet not eligible
@@ -153,28 +167,24 @@ flowchart TD
     B -- Yes --> D{Program Paused?}
     
     D -- Yes --> E[Unpause Program]
-    D -- No --> F[Create and Schedule New Round]
+    D -- No --> F[Create & Schedule Round - market_type]
     
     F --> G{Round Start Time Reached?}
-    G -- No --> H[Wait Until Start Time]
-    G -- Yes --> I[Users Place Bets - Auto]
+    G -- No --> H[Wait]
+    G -- Yes --> I[Keeper Activates Round]
     
-    I --> J{Cutoff Time Reached?}
-    J -- No --> O[Wait Until Cutoff Time]
-    J -- Yes --> K[Settle Round: 
-        - Lock betting 
-        - Update bet statuses 
-        - Calculate total winners_weight]
+    I --> J{Round End Time Reached?}
+    J -- No --> K[Users Place/Withdraw Bets]
+    J -- Yes --> L[Keeper Settles]
     
-    K --> L[Enable Claim Rewards - Auto by Users]
-    L --> M[Admin Prepares Next Round]
-    M --> F
-
+    L --> M[Users Claim Rewards]
+    M --> N[Admin Prepares Next Round]
+    N --> F
+    
     %% Optional cancel branch
-    I --> X[Cancel Round - Admin Action]
+    K --> X[Cancel Round - Admin Action]
     X --> Y[Refund All Bets]
-    Y --> M
-
+    Y --> N
 ```
 
 ### Admin (Low-level)
@@ -210,23 +220,19 @@ stateDiagram-v2
 flowchart TD
     A[Start] --> B[Fetch Scheduled Rounds]
     B --> C{Now >= start_time?}
-    C -- No --> B1[Wait 5 min] --> B
-    C -- Yes --> D[Set Round as Active]
-
-    %% Loop settlement check
-    A --> E[Fetch Active or PendingSettlement Rounds]
-    E --> F{Now >= end_time?}
-    F -- No --> E1[Wait 5 min] --> E
-    F -- Yes --> G[Get Final Price from Oracle]
-
-    G --> H{Price Fetched?}
-    H -- No --> I[Mark as PendingSettlement - Retry next loop] --> E
-    H -- Yes --> J[Run Settlement:
-        - Determine winners & losers
-        - Calculate winners_weight
-        - Mark bets as Won/Lost]
-
-    J --> K[Mark Round as Ended]
+    C -- No --> B1[Wait N minutes] --> B
+    C -- Yes --> D{market_type?}
+    D -- GroupBattle --> E1[Capture Start Prices - parallel]
+    E1 --> F1[Start Round]
+    D -- SingleAsset --> E2[Fetch Start Price]
+    E2 --> F1
+    F1 --> G[Fetch Active/Pending Rounds]
+    G --> H{Now >= end_time?}
+    H -- No --> G1[Wait N minutes] --> G
+    H -- Yes --> I{market_type?}
+    I -- GroupBattle --> J1[Capture End Prices - parallel] --> K1[Finalize Group - per group] --> L1[Finalize Groups for Round] --> M1[Settle Bets - batched]
+    I -- SingleAsset --> J2[Fetch Final Price] --> M1
+    M1 --> N[Round Ended]
 ```
 
 ### Keeper (Low-level)
@@ -342,7 +348,7 @@ stateDiagram-v2
 pub struct Config {
   // --- Authorities ---
   pub admin: Pubkey,                   // The administrator of the contract.
-  pub keeper_authorities: Vec<Pubkey>, // The authority for keeper accounts allowed to keeper operations.
+  pub keeper_authorities: Vec<Pubkey>, // Keeper authorities allowed to perform keeper operations.
 
   // --- Token & Treasury ---
   pub token_mint: Pubkey,              // The Gold Rush Token (GRT) used for betting.
@@ -355,6 +361,11 @@ pub struct Config {
   // --- Betting Rules ---
   pub min_bet_amount: u64,             // The minimum bet amount.
 
+  // --- Reward Calculations ---
+  pub min_time_factor_bps: u16,        // Minimum time factor in bps.
+  pub max_time_factor_bps: u16,        // Maximum time factor in bps.
+  pub default_direction_factor_bps: u16, // Default direction factor in bps.
+
   // --- Global State ---
   pub status: ContractStatus,          // Overall contract status (Active / Paused / EmergencyPaused)
   pub current_round_counter: u64,      // Incremental counter for new round IDs
@@ -364,7 +375,6 @@ pub struct Config {
   pub bump: u8,                        // A bump seed for PDA.
 }
 
-// Enum for program status flags
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
 pub enum ContractStatus {
     Active,
@@ -387,14 +397,17 @@ pub struct Round {
 
   // --- State ---
   pub status: RoundStatus,       // The current status of the round (Scheduled, Active, PendingSettlement, Ended).
-  pub start_price: Option<u64>,  // The price when round becomes Active.
-  pub final_price: Option<u64>,  // The price when round is settled.
+  pub start_price: Option<u64>,  // Only for single-asset markets.
+  pub final_price: Option<u64>,  // Only for single-asset markets.
   pub total_pool: u64,           // The total amount of GRT bet in this round.
   pub total_bets: u64,           // The total number of bets placed in this round.
   pub total_fee_collected: u64,  // The total fees collected for this round.
   pub total_reward_pool: u64,    // The total reward pool after deducting fees.
   pub winners_weight: u64,       // The total weight of winning bets (for reward calculation). Default to 0 if no winners.
   pub settled_bets: u64,         // Number of bets that have been processed (for incremental settlement)
+  pub winner_group_ids: Vec<u64>, // IDs of groups that won the round.
+  pub total_groups: u64,         // Total number of groups created in this round.
+  pub started_group_assets: u64, // Number of group assets with captured start price.
 
   // --- Metadata ---
   pub created_at: i64,           // The timestamp when the round was created.
@@ -402,16 +415,14 @@ pub struct Round {
   pub bump: u8,                  // A bump seed for PDA.
 }
 
-// Enum for round status
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
 pub enum RoundStatus {
-    Scheduled,                  // Created but not started yet
-    Active,                     // Currently accepting bets
-    PendingSettlement,          // Ended but settlement failed, needs retry
-    Ended,                      // Successfully settled
+    Scheduled,
+    Active,
+    PendingSettlement,
+    Ended,
 }
 
-// Enum for market types
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
 pub enum MarketType {
     GoldPrice,
@@ -423,37 +434,81 @@ pub enum MarketType {
 ```rust
 pub struct Bet {
   // --- Identify ---
-  pub round: Pubkey,           // The round this bet is associated with.
-  pub bettor: Pubkey,          // The address of the player placing the bet.
+  pub id: u64,               // Unique bet identifier within the round.
+  pub round: Pubkey,         // The round this bet is associated with.
+  pub bettor: Pubkey,        // The address of the player placing the bet.
 
   // --- Bet Info ---
-  pub amount: u64,            // The amount of GRT bet.
-  pub direction: BetDirection,          // The type of bet (Up, Down, PercentageChangeBps).
-  pub claimed: bool,          // Whether the reward has been claimed.
-  pub weight: u64,            // The weight of the bet (for reward calculation).
+  pub amount: u64,           // The amount of GRT bet.
+  pub group: Pubkey,         // The group this bet is associated with.
+  pub asset: Pubkey,         // The asset this bet is associated with.
+  pub direction: BetDirection, // The bet type (Up, Down, PercentageChangeBps).
+  pub claimed: bool,         // Whether the reward has been claimed.
+  pub weight: u64,           // The weight of the bet (for reward calculation).
 
   // --- State ---
-  pub status: BetStatus,      // The status of the bet (Pending, Won, Lost).
+  pub status: BetStatus,     // The status of the bet (Pending, Won, Lost).
 
   // --- Metadata ---
-  pub created_at: i64,        // The timestamp when the bet was placed.
-  pub bump: u8,               // A bump seed for PDA.
+  pub created_at: i64,       // The timestamp when the bet was placed.
+  pub bump: u8,              // A bump seed for PDA.
 }
 
-// Enum for bet types
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
 pub enum BetDirection {
     Up,
     Down,
-    PercentageChangeBps(i16),   // e.g., 10 for 0.1%, -25 for -0.25%
+    PercentageChangeBps(i16),
 }
 
-// Enum for bet status
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
 pub enum BetStatus {
     Pending,
     Won,
     Lost,
+}
+```
+
+### Asset
+```rust
+pub struct Asset {
+  // --- Identity ---
+  pub id: u64,
+  pub group: Pubkey,
+  pub round: Pubkey,
+  pub price_feed_account: Pubkey,
+
+  // --- State ---
+  pub symbol: [u8; 8],
+  pub start_price: Option<u64>,
+  pub final_price: Option<u64>,
+  pub growth_rate_bps: Option<i64>,
+
+  // --- Metadata ---
+  pub created_at: i64,
+  pub settled_at: Option<i64>,
+  pub bump: u8,
+}
+```
+
+### GroupAsset
+```rust
+pub struct GroupAsset {
+  // --- Identity ---
+  pub id: u64,
+  pub round: Pubkey,
+
+  // --- State ---
+  pub symbol: [u8; 8],
+  pub total_assets: u64,
+  pub total_final_price: u64,
+  pub total_growth_rate_bps: i64,
+  pub settled_assets: u64,
+  pub avg_growth_rate_bps: Option<i64>,
+
+  // --- Metadata ---
+  pub created_at: i64,
+  pub bump: u8,
 }
 ```
 
@@ -534,9 +589,9 @@ Each bet has a **weight** that represents its contribution to the reward pool.
 Weight depends on:
 
 1. **Bet Amount** — Larger bets contribute more.
-2. **Bet Type Factor** — Depends on the type of asset:
-   - **Gold** → uses a **non-linear scaling** (small changes in gold price may still give significant weight adjustments).
-   - **Stock** → uses a **linear scaling** (reward grows proportionally with the price change).
+2. **Bet Type Factor** — Depends on the market type:
+   - **Gold** → uses **non-linear scaling**.
+   - **Stock & Group Battle** → use **linear scaling**.
 3. **Time Factor** — Bets placed earlier in the round may carry a higher weight than bets placed near the end of the round.
 
 
@@ -549,23 +604,23 @@ $$
 Where:
 
 - `amount` = number of GRT tokens bet (before fees)  
-- `direction_factor` = multiplier based on `BetDirection` and `BetType`:
-  - Stock (linear): proportional to change, e.g., Up/Down = `1.0`, PercentageChangeBps = value depending on % change  
-  - Gold (non-linear): scaling factor that can amplify small % changes into larger weight multipliers  
+- `direction_factor` = multiplier based on `BetDirection` and market type:
+  - Linear markets (Stock & Group Battle): proportional to the chosen percentage; Up/Down uses the default factor; PercentageChangeBps adds a linear increment.
+  - Gold (non-linear): factor grows faster than linear.
 - `time_factor` = multiplier based on how early the bet was placed (range: $0 < \text{time factor} \le 1.0$)
 
 ### Linear vs Non-Linear Factors
 
-The system supports both **linear** and **non-linear** factor models depending on the game type.
+The system supports both **linear** and **non-linear** factor models depending on the market type.
 
 #### 1. Direction Factor
 
-- **Stock (Linear)**
-  The factor grows **proportionally** with the chosen percentage change.
+- **Stock & Group Battle (Linear)**
+  The factor grows **proportionally** with the chosen percentage.
   Example:  
   - Up/Down = `1.0`
-  - +5% change = `1.05`
-  - +10% change = `1.10`
+  - +5% = `1.05`
+  - +10% = `1.10`
 
 - **Gold (Non-Linear)**
   The factor grows **faster than linear**, emphasizing higher percentage changes.  
@@ -606,8 +661,21 @@ This ensures that even small gold changes may yield competitive rewards due to e
 
 When the round ends, the **keeper** settles it:
 
-1. The **Keeper** determines the winning bets by comparing `start_price` and `final_price`.
-2. Mark all winning bets as `Won` and sum their weights:
+1) Single-Asset:
+   - Compute price change: `final_price - start_price`.
+   - For each bet, determine win/loss based on `BetDirection` vs the sign of the change.
+   - Mark `Won/Lost/Draw` and accumulate `winners_weight`.
+
+2) Group Battle:
+   - Compute `avg_growth_rate_bps` per `GroupAsset` during the finalize step.
+   - Determine `winner_group_ids` = groups with the highest average growth (can be >1 in ties).
+   - For each bet: if `bet.group` is in `winner_group_ids`, define `effective_change = avg_growth_rate_bps` for that group and evaluate `BetDirection` against the sign of `effective_change`:
+     - Up → win if `effective_change > 0`
+     - Down → win if `effective_change < 0`
+     - PercentageChangeBps(x) → win if `sign(x) == sign(effective_change)`
+   - Mark `Won/Lost/Draw` and accumulate `winners_weight`.
+
+After determining winners, continue with the following calculations:
 
 $$
 \text{round winners weight} = \sum_{\text{all winning bets}} \text{bet weight}
@@ -620,14 +688,14 @@ $$
 \text{total fee collected} = \sum_{i=1}^{n} \text{amount}_i \times \frac{\text{fee bps}}{10000}
 $$
 
-5. Move `total_fee_collected` from round vault to `treasury`.
+5. Move `total_fee_collected` from the round vault to `treasury`.
 6. Update `round.total_reward_pool`:
 
 $$
 \text{round total reward pool} = \text{round total pool} - \text{round total fee collected}
 $$
 
-> **Note:** At this stage, **no rewards are sent to users yet** — only marking bet results and collecting fees.
+> Note: At this stage, no rewards are sent yet — only marking bet results and collecting fees.
 
 ### Self-Claim by User
 
@@ -655,7 +723,7 @@ $$
 
 ### Example Calculation
 
-#### Case 1: **Gold Round** (Non-Linear)
+#### Case 1: Gold Round - Non-Linear
 
 | User | Amount (GRT) | Direction | Fee (bps) | Time Factor | Direction Factor | Weight |
 |------|--------------|-----------|-----------|-------------|------------------|--------|
@@ -674,7 +742,7 @@ Rewards:
 - A = $(12.5 / 22.5) \times 29.85 \approx 16.58$ GRT  
 - B = $(10 / 22.5) \times 29.85 \approx 13.27$ GRT  
 
-#### Case 2: **Stock Round** (Linear)
+#### Case 2: Stock Round - Linear
 
 | User | Amount (GRT) | Direction | Fee (bps) | Time Factor | Direction Factor | Weight |
 |------|--------------|-----------|-----------|-------------|------------------|--------|
@@ -692,6 +760,26 @@ Rewards:
 Rewards:  
 - A = $(10.5 / 21.5) \times 29.70 \approx 14.49$ GRT  
 - B = $(11 / 21.5) \times 29.70 \approx 15.21$ GRT  
+
+#### Case 3: Group Battle - Linear
+
+Suppose there are 2 groups, average growth after finalize:
+- Group 1: +6% → `avg_growth_rate_bps = +600`
+- Group 2: +4% → `avg_growth_rate_bps = +400`
+Winner groups: `[Group 1]`.
+
+| User | Amount (GRT) | Direction | Chosen Group | Direction Factor | Weight |
+|------|--------------|-----------|--------------|------------------|--------|
+| A    | 10           | Up        | Group 1      | 1.0              | 10.0   |
+| B    | 20           | +5%       | Group 1      | 1.05             | 21.0   |
+
+- Winners: A and B (both chose the winning group).  
+- Total pool = 30 GRT. Assume fee bps = 100 → total fee = 0.30 GRT.  
+- Reward pool = 29.70 GRT.  
+- Winners weight = 10.0 + 21.0 = 31.0.  
+- Rewards:
+  - A = $(10.0 / 31.0) \times 29.70 \approx 9.58$ GRT  
+  - B = $(21.0 / 31.0) \times 29.70 \approx 20.12$ GRT  
 
 ---
 
@@ -904,12 +992,123 @@ _None_
 | `AlreadyActive`     | If the config is already in `Active` state               |
 
 ### Admin: Emergency Pause
-Pauses emergency deposit and place bet operations. Only the admin can perform this action.
+#### Purpose
+Immediately halt critical user operations (e.g., placing/withdrawing bets) due to an emergency. Claims may still be allowed depending on implementation.
+
+#### Context
+| Field       | Type                | Description                                       |
+|-------------|---------------------|---------------------------------------------------|
+| `admin`     | `Signer`             | The current admin authorized to trigger emergency pause. |
+| `config`    | `Account<Config>` (PDA)    | Global configuration account.                  |
+
+#### Arguments
+_None_
+
+#### Validations
+- `admin.key() == config.admin`
+- `config.status != EmergencyPaused` (cannot emergency-pause twice)
+
+#### Logic
+1. Set `config.status = EmergencyPaused`.
+
+#### Emits / Side Effects
+- The program enters emergency mode. User operations like creating rounds or placing bets are halted. Behavior for claims can remain allowed.
+
+#### Errors
+| Code             | Meaning                                            |
+|-------------------|-----------------------------------------------------|
+| `Unauthorized`      | Caller is not `config.admin`                        |
+| `EmergencyPaused`   | Program is already in emergency pause state          |
+
+---
 
 ### Admin: Emergency Unpause
-Unpauses emergency deposit and place bet operations. Only the admin can perform this action.
+#### Purpose
+Exit emergency mode and restore normal operations by setting the status back to Active.
+
+#### Context
+| Field       | Type                | Description                                       |
+|-------------|---------------------|---------------------------------------------------|
+| `admin`     | `Signer`             | The current admin authorized to clear emergency pause. |
+| `config`    | `Account<Config>` (PDA)    | Global configuration account.                  |
+
+#### Arguments
+_None_
+
+#### Validations
+- `admin.key() == config.admin`
+- `config.status == EmergencyPaused`
+
+#### Logic
+1. Set `config.status = Active`.
+
+#### Emits / Side Effects
+- The program exits emergency mode and resumes normal operations.
+
+#### Errors
+| Code             | Meaning                                            |
+|-------------------|-----------------------------------------------------|
+| `Unauthorized`      | Caller is not `config.admin`                        |
+| `AlreadyActive`     | Program is already in `Active` state                 |
 
 ### Admin: Create Round
+### Admin: Insert GroupAsset
+Adds a new `GroupAsset` to a round. Used for Group Battle mode.
+
+#### Context
+| Account | Type | Description |
+|--------|------|-------------|
+| `signer` | `Signer` | Admin signer |
+| `config` | `Account<Config>` | Global config |
+| `round` | `Account<Round>` (PDA, mut) | Target round |
+| `group_asset` | `Account<GroupAsset>` (PDA, init) | New group asset |
+| `system_program` | `Program<System>` | System program |
+
+#### Arguments
+| Name | Type | Description |
+|------|------|-------------|
+| `symbol` | `[u8; 8]` | Group symbol/label |
+
+#### Validations
+- `config.status` in {Active, EmergencyPaused}
+- Caller can be admin (enforced externally if needed)
+
+#### Logic
+1. Derive `group_asset` PDA with `GROUP_ASSET_SEED`, `round`, and `round.total_groups + 1`.
+2. Initialize fields: `id`, `round`, `symbol`, `created_at`, `bump`.
+3. Increment `round.total_groups` by 1.
+
+---
+
+### Admin: Insert Asset
+Adds a new `Asset` under a `GroupAsset`.
+
+#### Context
+| Account | Type | Description |
+|--------|------|-------------|
+| `signer` | `Signer` | Admin signer |
+| `config` | `Account<Config>` | Global config |
+| `round` | `Account<Round>` (PDA) | Target round |
+| `group_asset` | `Account<GroupAsset>` (PDA, mut) | Parent group asset |
+| `asset` | `Account<Asset>` (PDA, init) | New asset |
+| `feed_price_account` | `AccountInfo` | Pyth price account for this asset |
+| `system_program` | `Program<System>` | System program |
+
+#### Arguments
+| Name | Type | Description |
+|------|------|-------------|
+| `symbol` | `[u8; 8]` | Asset symbol/label |
+
+#### Validations
+- `config.status` in {Active, EmergencyPaused}
+- `group_asset.total_assets < MAX_GROUP_ASSETS`
+- Caller must be `config.admin` (as implemented)
+
+#### Logic
+1. Derive `asset` PDA with `ASSET_SEED`, `group_asset`, and `group_asset.total_assets + 1`.
+2. Initialize fields: `id`, `group`, `round`, `price_feed_account`, `symbol`, `created_at`, `bump`.
+3. Increment `group_asset.total_assets` by 1.
+
 
 #### Purpose
 This instruction is used by the Admin to create and schedule a new round.
@@ -971,6 +1170,61 @@ Cancels an active or scheduled round and refunds all bets. Only the admin can pe
 
 ---
 
+#### Purpose
+Allows the Admin to cancel a round that has not been fully settled yet. All user stakes are refunded from the round vault, bet accounts are closed, and finally the round (and vault) can be closed when empty.
+
+#### Context
+| Account | Type | Description |
+|--------|------|-------------|
+| `signer` | `Signer` | Admin signer |
+| `config` | `Account<Config>` (PDA) | Global configuration |
+| `round` | `Account<Round>` (PDA, mut) | The round to cancel |
+| `round_vault` | `Account<TokenAccount>` (PDA, mut) | Vault holding all stakes for this round |
+| `mint` | `Account<Mint>` | Token mint used for betting |
+| `token_program` | `Program<Token>` | SPL Token program |
+| `system_program` | `Program<System>` | System program |
+
+Additional remaining accounts:
+- For each bet to be refunded in this call: the `Bet` PDA (writable) and the bettor’s token account (ATA, writable). Perform this in batches to respect CU and account limits.
+
+#### Arguments
+_None_
+
+#### Validations
+- `signer.key() == config.admin`
+- `config.status` is `Active` or `EmergencyPaused`
+- `round.status` in `{ Scheduled, Active, PendingSettlement }` (cannot cancel an `Ended` round)
+- Each provided `Bet` PDA matches seeds and `bet.round == round.key()`
+- Each provided bettor ATA must correspond to the program’s `mint`
+
+#### Logic
+1. For each `Bet` in `remaining_accounts`:
+   - Validate the `Bet` PDA and ownership.
+   - Transfer `bet.amount` from `round_vault` to the bettor ATA using the round PDA signer.
+   - Close the `Bet` account, returning rent to the bettor.
+2. This instruction is repeatable (batched) until all bets are refunded and closed.
+3. Once no bets remain and `round_vault` balance is `0`, close `round_vault` (send rent to admin or a designated recipient).
+4. Close the `Round` account (send rent to admin), effectively completing cancellation.
+
+> Note: Depending on operational preference, step 3–4 can be a dedicated finalization instruction once all refunds are completed.
+
+#### Emits / Side Effects
+- All processed `Bet` accounts are closed and funds returned to users.
+- `round_vault` is closed when empty.
+- `Round` account is closed after successful refunds.
+
+#### Errors
+| Code | Meaning |
+|------|---------|
+| `Unauthorized` | If `signer` is not `config.admin` |
+| `ProgramPaused` | If global status does not allow admin actions |
+| `InvalidRoundStatus` | If trying to cancel an `Ended` round |
+| `InvalidBetAccount` | If any provided bet PDA is invalid |
+| `InvalidTokenAccount` | If bettor ATA or vault is invalid |
+| `TokenTransferFailed` | If refund transfer fails |
+| `InsufficientVaultBalance` | If the vault lacks sufficient balance for a refund |
+
+
 ### Keeper: Start Round
 
 #### Purpose
@@ -1015,8 +1269,7 @@ When called, the round becomes Active, allowing users to place bets (place_bet()
 
 ---
 
-### Keeper: Settle Round
-
+### Keeper: Settle Round - Single Asset
 #### Purpose
 This instruction is executed by the Keeper to settle a round that has reached its end_time.
 The settlement process includes:
@@ -1027,6 +1280,8 @@ The settlement process includes:
 - Collecting fees for the treasury
 
 Upon successful settlement, the round status changes to **Ended**.
+
+> Note: For Group Battle rounds, see “Keeper: Settle Round - Group Battle”, which relies on `winner_group_ids` instead of a single price change.
 
 #### Context
 | Field         | Type                    | Description                                         |
@@ -1094,6 +1349,98 @@ Upon successful settlement, the round status changes to **Ended**.
 | `InvalidBetAccount` | If PDA bet does not match |
 | `Overflow` | If an overflow occurred during calculation |
 | `InvalidBettorsLength` | If the number of bets > `MAX_BETS_SETTLE`
+### Keeper: Capture Start Price (Group Battle)
+Batch-captures start prices for multiple assets via remaining accounts.
+
+#### Context
+| Account | Type | Description |
+|--------|------|-------------|
+| `signer` | `Signer` | Authorized keeper |
+| `config` | `Account<Config>` | Global configuration |
+| `round` | `Account<Round>` (PDA, mut) | Target round |
+| `group_asset` | `Account<GroupAsset>` (PDA, mut) | Group to capture |
+| `system_program` | `Program<System>` | System program |
+
+Remaining accounts: repeated pairs `[asset_pda (w), pyth_price_account (r)]`.
+
+#### Arguments
+_None_
+
+#### Validations
+- `config.status` in {Active, EmergencyPaused}
+- For each pair: Asset PDA valid for `group_asset` and `round`, and `asset.price_feed_account == pyth_price_account.key()`
+- Pyth price not older than `ASSET_PRICE_STALENESS_THRESHOLD_SECONDS`
+
+#### Logic
+For each pair `(asset, pyth)`:
+1. Load price from Pyth, normalize to internal decimals.
+2. If `asset.start_price.is_none()`, set it; idempotent.
+3. Serialize back.
+
+---
+
+### Keeper: Capture End Price (Group Battle)
+Batch-captures end prices and computes per-asset growth.
+
+#### Context
+Same as Capture Start Price, but writing `asset.final_price` and `asset.growth_rate_bps`.
+
+#### Logic
+For each pair `(asset, pyth)`:
+1. Load price from Pyth, normalize.
+2. Set `asset.final_price` if empty; compute `growth_rate_bps` from `(final - start) / start * 10_000`.
+3. Serialize back. Idempotent.
+
+---
+
+### Keeper: Finalize Group Asset
+Aggregates asset-level results into `GroupAsset`.
+
+#### Context
+| Account | Type | Description |
+|--------|------|-------------|
+| `signer` | `Signer` | Authorized keeper |
+| `config` | `Account<Config>` | Global configuration |
+| `round` | `Account<Round>` (PDA) | Target round |
+| `group_asset` | `Account<GroupAsset>` (PDA, mut) | Group to finalize |
+| `system_program` | `Program<System>` | System program |
+
+Remaining accounts: all `Asset` PDAs of the group (readonly, batched if needed).
+
+#### Logic
+1. Iterate assets with `final_price` and `growth_rate_bps` set.
+2. Accumulate `total_final_price`, `total_growth_rate_bps`, `settled_assets`.
+3. Compute `avg_growth_rate_bps = total_growth_rate_bps / settled_assets` if `settled_assets > 0`.
+4. Save fields to `group_asset`.
+
+---
+
+### Keeper: Finalize Groups for Round
+Determines `winner_group_ids` for the round.
+
+#### Context
+| Account | Type | Description |
+|--------|------|-------------|
+| `signer` | `Signer` | Authorized keeper |
+| `config` | `Account<Config>` | Global configuration |
+| `round` | `Account<Round>` (PDA, mut) | Target round |
+
+Remaining accounts: all `GroupAsset` PDAs for the round (readonly, batched if needed).
+
+#### Logic
+1. Read `avg_growth_rate_bps` of each group and determine max value.
+2. Set `round.winner_group_ids` to all group IDs with the max average (allow multiple winners for ties).
+
+---
+
+### Keeper: Settle Round - Group Battle
+Same entrypoint as settle but relying on `winner_group_ids`.
+
+#### Logic differences
+- Instead of price change, use `winner_group_ids` to determine winning bets.
+- A bet wins if `bet.group` is in `winner_group_ids` and its `BetDirection` sign matches the group’s `avg_growth_rate_bps` sign (Up/Down) or chosen `PercentageChangeBps` sign.
+- Winners’ weights are summed into `round.winners_weight`.
+
 
 ---
 
@@ -1269,8 +1616,8 @@ This program uses Program Derived Addresses (PDA) to create deterministic and pr
 
 ### Round Account  
 - **Seeds**: `["round", round_id]`
-- **Purpose**: Stores round betting information such as asset, start/end time, status, total pool, etc.
-- **Unique**: No, one account can multiple-bet per round_id
+- **Purpose**: Stores round information such as start/end time, status, market type, totals, rewards, etc.
+- **Unique**: Yes, one round account per `round_id`
 - **Parameters**:
   - `round_id`: u64 converted to bytes (little-endian)
 - **Example**: Program ID + ["round", 1u64.to_le_bytes()] → Round PDA for round 1
@@ -1285,12 +1632,30 @@ This program uses Program Derived Addresses (PDA) to create deterministic and pr
 
 ### Bet Account
 - **Seeds**: `["bet", round, bet_index]`
-- **Purpose**: Stores individual user bet information for a specific round
-- **Unique**: Yes, one bet per user per round
+- **Purpose**: Stores individual bet information for a specific round
+- **Unique**: Yes, one bet per `bet_index` per round
 - **Parameters**:
   - `round`: Public key of the round account (32 bytes)
-  - `bet_index`: u64 converted to bytes (little-endian) to allow multiple bets per user per round
-- **Example**: Program ID + ["bet", round.key().to_bytes().as_ref(), &bet_index.to_le_bytes()] → Bet PDA for user in round 1
+  - `bet_index`: u64 converted to bytes (little-endian)
+- **Example**: Program ID + ["bet", round.key().as_ref(), &bet_index.to_le_bytes()] → Bet PDA in round 1
+
+### GroupAsset Account
+- **Seeds**: `["group_asset", round, group_id]`
+- **Purpose**: Stores per-group aggregates for Group Battle rounds
+- **Unique**: Yes, one group per `group_id` in a round
+- **Parameters**:
+  - `round`: Public key of the round account (32 bytes)
+  - `group_id`: u64 converted to bytes (little-endian)
+- **Example**: Program ID + ["group_asset", round.key().as_ref(), &group_id.to_le_bytes()] → GroupAsset PDA
+
+### Asset Account
+- **Seeds**: `["asset", group_asset, asset_id]`
+- **Purpose**: Stores per-asset data used to compute group averages
+- **Unique**: Yes, one asset per `asset_id` under a GroupAsset
+- **Parameters**:
+  - `group_asset`: Public key of the GroupAsset account (32 bytes)
+  - `asset_id`: u64 converted to bytes (little-endian)
+- **Example**: Program ID + ["asset", group_asset.key().as_ref(), &asset_id.to_le_bytes()] → Asset PDA
 
 ### Rust Implementation
 
@@ -1315,6 +1680,18 @@ let (vault_pda, vault_bump) = Pubkey::find_program_address(
 // Bet PDA
 let (bet_pda, bet_bump) = Pubkey::find_program_address(
     &[b"bet", round.key().as_ref(), &bet_index.to_le_bytes()],
+    program_id
+);
+
+// GroupAsset PDA
+let (group_asset_pda, group_asset_bump) = Pubkey::find_program_address(
+    &[b"group_asset", round.key().as_ref(), &group_id.to_le_bytes()],
+    program_id
+);
+
+// Asset PDA
+let (asset_pda, asset_bump) = Pubkey::find_program_address(
+    &[b"asset", group_asset_pda.key().as_ref(), &asset_id.to_le_bytes()],
     program_id
 );
 ```
@@ -1386,6 +1763,14 @@ The following is a complete list of error codes used in the Gold Rush program:
 | 24577 | 0x6001 | `InsufficientBalance` | User balance is insufficient for bet |
 | 24578 | 0x6002 | `InvalidMint` | Token mint does not match configuration |
 | 24579 | 0x6003 | `TokenTransferFailed` | Token transfer failed |
+
+### Assets & Oracle Errors (0x8000 - 0x8fff)
+
+| Code | Hex | Name | Description |
+|------|-----|------|-------------|
+| 32768 | 0x8000 | `InvalidAssetAccount` | Invalid asset account provided |
+| 32769 | 0x8001 | `InvalidAssetAccountData` | Invalid asset account data provided |
+| 32770 | 0x8002 | `PythError` | Error loading or validating Pyth price data |
 
 ### Custom Error Implementation
 
