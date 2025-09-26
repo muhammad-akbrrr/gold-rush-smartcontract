@@ -134,5 +134,11 @@ pub fn handler(
         config.min_bet_amount = new_min_bet_amount;
     }
 
+    // update config version
+    config.version = config
+        .version
+        .checked_add(1)
+        .ok_or(GoldRushError::Overflow)?;
+
     Ok(())
 }
