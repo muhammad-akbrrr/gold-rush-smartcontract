@@ -12,6 +12,7 @@ pub mod settle_group;
 pub mod settle_round;
 pub mod start_round;
 pub mod unpause_program;
+pub mod update_config;
 
 pub use capture_start_price::*;
 pub use claim_reward::*;
@@ -25,3 +26,4 @@ pub use settle_group::*;
 pub use settle_round::*;
 pub use start_round::*;
 pub use unpause_program::*;
+pub use update_config::*;

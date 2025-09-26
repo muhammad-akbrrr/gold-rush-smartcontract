@@ -46,6 +46,30 @@ pub enum GoldRushError {
     #[msg("Treasury authority does not match config")]
     InvalidTreasuryAuthority = 0x2007,
 
+    #[msg("New admin cannot be the same as the current admin")]
+    InvalidNewAdmin = 0x2008,
+
+    #[msg("New keeper authorities cannot be empty")]
+    NoNewKeeperAuthorities = 0x2009,
+
+    #[msg("Maximum keeper authorities reached")]
+    MaxKeeperAuthoritiesReached = 0x2010,
+
+    #[msg("New token mint cannot be the same as the current token mint")]
+    InvalidNewTokenMint = 0x2011,
+
+    #[msg("New treasury cannot be the same as the current treasury")]
+    InvalidNewTreasury = 0x2012,
+
+    #[msg("New fee gold price basis points must be less than 10000")]
+    InvalidNewFeeGoldPriceBps = 0x2013,
+
+    #[msg("New fee stock price basis points must be less than 10000")]
+    InvalidNewFeeStockPriceBps = 0x2014,
+
+    #[msg("New minimum bet amount must be greater than 0")]
+    InvalidNewMinBetAmount = 0x2015,
+
     // Round Management Errors (0x3000 - 0x3999)
     #[msg("Invalid timestamps: start_time must be less than end_time and in the future")]
     InvalidTimestamps = 0x3000,

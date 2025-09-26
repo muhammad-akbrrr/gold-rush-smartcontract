@@ -45,6 +45,28 @@ pub mod gold_rush {
         )
     }
 
+    pub fn update_config(
+        ctx: Context<UpdateConfig>,
+        new_admin: Option<Pubkey>,
+        new_keeper_authorities: Option<Vec<Pubkey>>,
+        new_token_mint: Option<Pubkey>,
+        new_treasury: Option<Pubkey>,
+        new_fee_gold_price_bps: Option<u16>,
+        new_fee_stock_price_bps: Option<u16>,
+        new_min_bet_amount: Option<u64>,
+    ) -> Result<()> {
+        update_config::handler(
+            ctx,
+            new_admin,
+            new_keeper_authorities,
+            new_token_mint,
+            new_treasury,
+            new_fee_gold_price_bps,
+            new_fee_stock_price_bps,
+            new_min_bet_amount,
+        )
+    }
+
     pub fn pause_program(ctx: Context<PauseProgram>) -> Result<()> {
         pause_program::handler(ctx)
     }
