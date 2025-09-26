@@ -70,13 +70,14 @@ pub fn handler(
     // validate
     ctx.accounts.validate(start_time, end_time)?;
 
-    let config = &ctx.accounts.config;
+    let config = &mut ctx.accounts.config;
     let round = &mut ctx.accounts.round;
 
-    let round_id = config.current_round_counter + 1;
-
     // set fields
-    round.id = round_id;
+    round.id = config
+        .current_round_counter
+        .checked_add(1)
+        .ok_or(GoldRushError::Overflow)?;
     round.start_time = start_time;
     round.end_time = end_time;
     round.vault = ctx.accounts.vault.key();
@@ -85,6 +86,12 @@ pub fn handler(
     round.status = RoundStatus::Scheduled;
     round.created_at = Clock::get()?.unix_timestamp;
     round.bump = ctx.bumps.round;
+
+    // set config fields
+    config.current_round_counter = config
+        .current_round_counter
+        .checked_add(1)
+        .ok_or(GoldRushError::Overflow)?;
 
     Ok(())
 }

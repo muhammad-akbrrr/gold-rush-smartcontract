@@ -1051,7 +1051,6 @@ _None_
 | `Unauthorized`      | Caller is not `config.admin`                        |
 | `AlreadyActive`     | Program is already in `Active` state                 |
 
-### Admin: Create Round
 ### Admin: Insert GroupAsset
 Adds a new `GroupAsset` to a round. Used for Group Battle mode.
 
@@ -1109,7 +1108,9 @@ Adds a new `Asset` under a `GroupAsset`.
 2. Initialize fields: `id`, `group`, `round`, `price_feed_account`, `symbol`, `created_at`, `bump`.
 3. Increment `group_asset.total_assets` by 1.
 
+---
 
+### Admin: Create Round
 #### Purpose
 This instruction is used by the Admin to create and schedule a new round.
 The created round will automatically become active when the start time is reached, and will automatically close (lock) when the end time is reached.
@@ -1120,8 +1121,9 @@ Users can only place bets while the round is in Active status.
 |----------------------|------------------------------|---------------------------------------------------|
 | `signer` | `Signer` | The authorized admin who creates a new round. |
 | `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
-| `round` | `Account<Round>` (PDA) | The new round account to be initialized. |
-| `vault` | `AccountInfo` (PDA) | The vault account to hold bets for this round. |
+| `round` | `Account<Round>` (PDA, init) | The new round account to be initialized. |
+| `vault` | `AccountInfo` (PDA, init) | The vault account to hold bets for this round. |
+| `mint` | `Account<Mint>` | Token mint used for betting |
 | `system_program` | `Program<System>` | Solana's built-in system program. |
 | `token_program` | `Program<Token>` | Solana's SPL Token program. |
 
@@ -1143,11 +1145,11 @@ Users can only place bets while the round is in Active status.
 1. Create round `vault` account to hold bets
 2. Initialize `round` fields:
    - `round_id = config.current_round_counter + 1`
-   - `asset = asset`
    - `start_time = start_time`
    - `end_time = end_time`
    - `market_type = market_type`
    - `vault = vault.key()`
+   - `vault_bump = bumps.vault`
    - `status = Scheduled`
    - `created_at = Clock::now()`
 3. Increment `config.current_round_counter` by 1
@@ -1159,9 +1161,9 @@ Users can only place bets while the round is in Active status.
 ## Errors
 | Code                         | Meaning                                            |
 |--------------------------------|-------------------------------------------------------|
+| `ProgramPaused` | If `config.status != Active` |
 | `Unauthorized`                       | If the caller is not the official keeper |
 | `InvalidTimestamps`                  | If `start_time` or `end_time` is invalid |
-| `RoundAlreadyExists`                 | If the PDA for `round_id` has already been created |
 
 ---
 
@@ -1217,7 +1219,7 @@ _None_
 | Code | Meaning |
 |------|---------|
 | `Unauthorized` | If `signer` is not `config.admin` |
-| `ProgramPaused` | If global status does not allow admin actions |
+| `ProgramPaused` | If `config.status != Active` |
 | `InvalidRoundStatus` | If trying to cancel an `Ended` round |
 | `InvalidBetAccount` | If any provided bet PDA is invalid |
 | `InvalidTokenAccount` | If bettor ATA or vault is invalid |
