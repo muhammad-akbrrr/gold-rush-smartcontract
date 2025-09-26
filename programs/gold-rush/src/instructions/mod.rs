@@ -11,6 +11,7 @@ pub mod place_bet;
 pub mod settle_group;
 pub mod settle_round;
 pub mod start_round;
+pub mod unpause_program;
 
 pub use capture_start_price::*;
 pub use claim_reward::*;
@@ -23,3 +24,4 @@ pub use place_bet::*;
 pub use settle_group::*;
 pub use settle_round::*;
 pub use start_round::*;
+pub use unpause_program::*;

@@ -49,6 +49,10 @@ pub mod gold_rush {
         pause_program::handler(ctx)
     }
 
+    pub fn unpause_program(ctx: Context<UnpauseProgram>) -> Result<()> {
+        unpause_program::handler(ctx)
+    }
+
     pub fn create_round(
         ctx: Context<CreateRound>,
         market_type: MarketType,
