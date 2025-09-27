@@ -398,7 +398,7 @@ pub struct Round {
   pub market_type: MarketType,   // The type of market (GoldPrice, StockPrice).
 
   // --- State ---
-  pub status: RoundStatus,       // The current status of the round (Scheduled, Active, PendingSettlement, Ended).
+  pub status: RoundStatus,       // The current status of the round (Scheduled, Active, Cancelling, PendingSettlement, Ended).
   pub start_price: Option<u64>,  // Only for single-asset markets.
   pub final_price: Option<u64>,  // Only for single-asset markets.
   pub total_pool: u64,           // The total amount of GRT bet in this round.
@@ -421,6 +421,7 @@ pub struct Round {
 pub enum RoundStatus {
     Scheduled,
     Active,
+    Cancelling,            // Ongoing cancellation; betting/withdrawing is blocked
     PendingSettlement,
     Ended,
 }
@@ -1176,7 +1177,7 @@ _None_
 ---
 
 ### Admin: Cancel Round
-Cancels an active or scheduled round and refunds all bets. Only the admin can perform this action
+Cancels an active or scheduled round, refunds all bets, and then closes both the round vault and the round account. If no bets have been placed, the vault and round are closed immediately. Only the admin can perform this action.
 
 #### Purpose
 Allows the Admin to cancel a round that has not been fully settled yet. All user stakes are refunded from the round vault, bet accounts are closed, and finally the round (and vault) can be closed when empty.
@@ -1193,7 +1194,7 @@ Allows the Admin to cancel a round that has not been fully settled yet. All user
 | `system_program` | `Program<System>` | System program |
 
 #### Remaining Accounts
-- First account: `bettor_token_accuont` (ATA, writable) — the bettor GRT token account.
+- First account: `bettor_token_account` (ATA, writable) — the bettor GRT token account.
 - Next N accounts: `Bet` PDAs (writable) — batched bets to settle in this call.
 
 #### Arguments
@@ -1207,20 +1208,20 @@ _None_
 - Each provided bettor ATA must correspond to the program’s `mint`
 
 #### Logic
-1. For each `Bet` in `remaining_accounts`:
-   - Validate the `Bet` PDA and ownership.
+1. Fast path (no bets):
+   - If `round.total_bets == 0`, close `round_vault` and then close the `Round` account. Return.
+2. Refund path (batched): For each `Bet` in `remaining_accounts`:
+   - Validate the `Bet` PDA and its association with the `round`.
    - Transfer `bet.amount` from `round_vault` to the bettor ATA using the round PDA signer.
-   - Close the `Bet` account, returning rent to the bettor.
-2. This instruction is repeatable (batched) until all bets are refunded and closed.
-3. Once no bets remain and `round_vault` balance is `0`, close `round_vault` (send rent to admin or a designated recipient).
-4. Close the `Round` account (send rent to admin), effectively completing cancellation.
-
-> Note: Depending on operational preference, step 3–4 can be a dedicated finalization instruction once all refunds are completed.
+   - Close the `Bet` account (rent back to bettor).
+3. Repeat step 2 in batches until all bets are refunded and all `Bet` accounts are closed.
+4. After all refunds, close `round_vault` (rent to admin or designated recipient).
+5. Close the `Round` account (rent to admin) to complete cancellation.
 
 #### Emits / Side Effects
 - All processed `Bet` accounts are closed and funds returned to users.
-- `round_vault` is closed when empty.
-- `Round` account is closed after successful refunds.
+- `round_vault` is closed (immediately if no bets, or after all refunds).
+- `Round` account is closed (immediately if no bets, or after vault close).
 
 #### Errors
 | Code | Meaning |
@@ -1233,6 +1234,7 @@ _None_
 | `TokenTransferFailed` | If refund transfer fails |
 | `InsufficientVaultBalance` | If the vault lacks sufficient balance for a refund |
 
+---
 
 ### Keeper: Start Round
 

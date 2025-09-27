@@ -104,7 +104,7 @@ pub mod gold_rush {
         insert_asset::handler(ctx, symbol)
     }
 
-    pub fn cancel_round(ctx: Context<CancelRound>) -> Result<()> {
+    pub fn cancel_round<'info>(ctx: Context<'_, '_, '_, 'info, CancelRound<'info>>) -> Result<()> {
         cancel_round::handler(ctx)
     }
 
