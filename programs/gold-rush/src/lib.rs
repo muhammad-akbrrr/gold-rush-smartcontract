@@ -27,6 +27,7 @@ pub mod gold_rush {
         fee_single_asset_bps: u16,
         fee_group_battle_bps: u16,
         min_bet_amount: u64,
+        bet_cutoff_window_secs: i64,
         min_time_factor_bps: u16,
         max_time_factor_bps: u16,
         default_direction_factor_bps: u16,
@@ -39,6 +40,7 @@ pub mod gold_rush {
             fee_single_asset_bps,
             fee_group_battle_bps,
             min_bet_amount,
+            bet_cutoff_window_secs,
             min_time_factor_bps,
             max_time_factor_bps,
             default_direction_factor_bps,
@@ -54,6 +56,7 @@ pub mod gold_rush {
         new_fee_single_asset_bps: Option<u16>,
         new_fee_group_battle_bps: Option<u16>,
         new_min_bet_amount: Option<u64>,
+        new_bet_cutoff_window_secs: Option<i64>,
     ) -> Result<()> {
         update_config::handler(
             ctx,
@@ -64,6 +67,7 @@ pub mod gold_rush {
             new_fee_single_asset_bps,
             new_fee_group_battle_bps,
             new_min_bet_amount,
+            new_bet_cutoff_window_secs,
         )
     }
 

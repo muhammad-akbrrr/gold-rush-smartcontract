@@ -8,6 +8,7 @@ pub struct Round {
     pub id: u64, // Unique identifier for the round (incremental from config.current_round_counter).
     pub start_time: i64, // The timestamp when round is scheduled to start.
     pub end_time: i64, // The timestamp when round is scheduled to end.
+    pub bet_cutoff_time: i64, // The timestamp after which no more bets or withdrawals are allowed.
     pub vault: Pubkey, // The vault account holding the bets for this round.
     pub vault_bump: u8, // A bump seed for vault PDA.
     pub market_type: MarketType, // The type of market (GoldPrice, StockPrice).

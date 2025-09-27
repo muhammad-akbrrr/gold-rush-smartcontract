@@ -24,6 +24,7 @@ impl<'info> UpdateConfig<'info> {
         new_fee_single_asset_bps: Option<u16>,
         new_fee_group_battle_bps: Option<u16>,
         new_min_bet_amount: Option<u64>,
+        new_bet_cutoff_window_secs: Option<i64>,
     ) -> Result<()> {
         require!(
             self.signer.key() == self.config.admin,
@@ -84,6 +85,13 @@ impl<'info> UpdateConfig<'info> {
             );
         }
 
+        if let Some(new_bet_cutoff_window_secs) = new_bet_cutoff_window_secs {
+            require!(
+                new_bet_cutoff_window_secs >= 0,
+                GoldRushError::InvalidNewBetCutoffWindowSecs
+            );
+        }
+
         Ok(())
     }
 }
@@ -97,6 +105,7 @@ pub fn handler(
     new_fee_single_asset_bps: Option<u16>,
     new_fee_group_battle_bps: Option<u16>,
     new_min_bet_amount: Option<u64>,
+    new_bet_cutoff_window_secs: Option<i64>,
 ) -> Result<()> {
     // validate
     ctx.accounts.validate(
@@ -107,6 +116,7 @@ pub fn handler(
         new_fee_single_asset_bps,
         new_fee_group_battle_bps,
         new_min_bet_amount,
+        new_bet_cutoff_window_secs,
     )?;
 
     let config = &mut ctx.accounts.config;
@@ -132,6 +142,9 @@ pub fn handler(
     }
     if let Some(new_min_bet_amount) = new_min_bet_amount {
         config.min_bet_amount = new_min_bet_amount;
+    }
+    if let Some(new_bet_cutoff_window_secs) = new_bet_cutoff_window_secs {
+        config.bet_cutoff_window_secs = new_bet_cutoff_window_secs;
     }
 
     // update config version

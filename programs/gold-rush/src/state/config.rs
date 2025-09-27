@@ -18,7 +18,8 @@ pub struct Config {
     pub fee_group_battle_bps: u16, // The fee percentage charged on bets based on Group Battle.
 
     // --- Betting Rules ---
-    pub min_bet_amount: u64, // The minimum bet amount.
+    pub min_bet_amount: u64,         // The minimum bet amount.
+    pub bet_cutoff_window_secs: i64, // Window before end_time when betting closes.
 
     // --- Reward Calculations ---
     pub min_time_factor_bps: u16, // The minimum time factor in basis points.

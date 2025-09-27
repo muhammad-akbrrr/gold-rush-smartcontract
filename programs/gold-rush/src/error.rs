@@ -79,6 +79,9 @@ pub enum GoldRushError {
     #[msg("Program is not in emergency pause")]
     NotEmergencyPaused = 0x2019,
 
+    #[msg("New bet cutoff window seconds must be greater than 0")]
+    InvalidNewBetCutoffWindowSecs = 0x2020,
+
     // Round Management Errors (0x3000 - 0x3999)
     #[msg("Invalid timestamps: start_time must be less than end_time and in the future")]
     InvalidTimestamps = 0x3000,

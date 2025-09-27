@@ -25,6 +25,7 @@ impl<'info> Initialize<'info> {
         fee_single_asset_bps: u16,
         fee_group_battle_bps: u16,
         min_bet_amount: u64,
+        bet_cutoff_window_secs: i64,
         min_time_factor_bps: u16,
         max_time_factor_bps: u16,
         default_direction_factor_bps: u16,
@@ -50,6 +51,11 @@ impl<'info> Initialize<'info> {
         );
 
         require!(min_bet_amount > 0, GoldRushError::InvalidMinBetAmount);
+
+        require!(
+            bet_cutoff_window_secs >= 0,
+            GoldRushError::InvalidNewBetCutoffWindowSecs
+        );
 
         require!(
             (0..=HUNDRED_PERCENT_BPS).contains(&min_time_factor_bps),
@@ -83,6 +89,7 @@ pub fn handler(
     fee_single_asset_bps: u16,
     fee_group_battle_bps: u16,
     min_bet_amount: u64,
+    bet_cutoff_window_secs: i64,
     min_time_factor_bps: u16,
     max_time_factor_bps: u16,
     default_direction_factor_bps: u16,
@@ -93,6 +100,7 @@ pub fn handler(
         fee_single_asset_bps,
         fee_group_battle_bps,
         min_bet_amount,
+        bet_cutoff_window_secs,
         min_time_factor_bps,
         max_time_factor_bps,
         default_direction_factor_bps,
@@ -108,6 +116,7 @@ pub fn handler(
     config.fee_single_asset_bps = fee_single_asset_bps;
     config.fee_group_battle_bps = fee_group_battle_bps;
     config.min_bet_amount = min_bet_amount;
+    config.bet_cutoff_window_secs = bet_cutoff_window_secs;
     config.min_time_factor_bps = min_time_factor_bps;
     config.max_time_factor_bps = max_time_factor_bps;
     config.default_direction_factor_bps = default_direction_factor_bps;

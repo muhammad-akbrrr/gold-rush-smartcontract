@@ -20,6 +20,9 @@ pub struct PlaceBet<'info> {
     )]
     pub round: Account<'info, Round>,
 
+    // Optional: only required for GroupBattle rounds
+    pub group_asset: Option<Account<'info, GroupAsset>>,
+
     #[account(
         init,
         payer = signer,
@@ -61,10 +64,24 @@ impl<'info> PlaceBet<'info> {
             GoldRushError::RoundNotActive
         );
 
+        // Enforce bet cutoff rather than the exact end_time to prevent last-second betting
         require!(
-            Clock::get()?.unix_timestamp < self.round.end_time,
+            Clock::get()?.unix_timestamp < self.round.bet_cutoff_time,
             GoldRushError::RoundEnded
         );
+
+        // For GroupBattle, group_asset must be provided and belong to this round
+        if matches!(self.round.market_type, MarketType::GroupBattle) {
+            let ga = self
+                .group_asset
+                .as_ref()
+                .ok_or(GoldRushError::InvalidAssetAccount)?;
+            require_keys_eq!(
+                ga.round,
+                self.round.key(),
+                GoldRushError::InvalidAssetAccount
+            );
+        }
 
         require!(
             amount >= self.config.min_bet_amount,
@@ -94,6 +111,16 @@ pub fn handler(ctx: Context<PlaceBet>, amount: u64, direction: BetDirection) -> 
     let config = &ctx.accounts.config;
     let round = &mut ctx.accounts.round;
     let bet = &mut ctx.accounts.bet;
+
+    // Assign group only for GroupBattle
+    if matches!(round.market_type, MarketType::GroupBattle) {
+        let ga = ctx
+            .accounts
+            .group_asset
+            .as_ref()
+            .ok_or(GoldRushError::InvalidAssetAccount)?;
+        bet.group = Some(ga.key());
+    }
 
     // calculate bet weight
     let round_duration = round

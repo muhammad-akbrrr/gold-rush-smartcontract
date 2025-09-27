@@ -80,6 +80,11 @@ pub fn handler(
         .ok_or(GoldRushError::Overflow)?;
     round.start_time = start_time;
     round.end_time = end_time;
+    // bet cutoff = end_time - config.bet_cutoff_window_secs (ensure it stays after start_time)
+    let default_cutoff = end_time
+        .checked_sub(config.bet_cutoff_window_secs)
+        .ok_or(GoldRushError::Underflow)?;
+    round.bet_cutoff_time = core::cmp::max(default_cutoff, start_time);
     round.vault = ctx.accounts.vault.key();
     round.vault_bump = ctx.bumps.vault;
     round.market_type = market_type;

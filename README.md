@@ -360,6 +360,7 @@ pub struct Config {
 
   // --- Betting Rules ---
   pub min_bet_amount: u64,             // The minimum bet amount.
+  pub bet_cutoff_window_secs: i64,     // Window before end_time when betting closes.
 
   // --- Reward Calculations ---
   pub min_time_factor_bps: u16,        // Minimum time factor in bps.
@@ -391,6 +392,7 @@ pub struct Round {
   pub id: u64,                   // Unique identifier for the round (incremental from config.current_round_counter).
   pub start_time: i64,           // The timestamp when round is scheduled to start.
   pub end_time: i64,             // The timestamp when round is scheduled to end.
+  pub bet_cutoff_time: i64,      // Time after which placing/withdrawing bets is disallowed.
   pub vault: Pubkey,             // The vault account holding the bets for this round.
   pub vault_bump: u8,            // A bump seed for the vault PDA.
   pub market_type: MarketType,   // The type of market (GoldPrice, StockPrice).
@@ -437,10 +439,10 @@ pub struct Bet {
   pub id: u64,               // Unique bet identifier within the round.
   pub round: Pubkey,         // The round this bet is associated with.
   pub bettor: Pubkey,        // The address of the player placing the bet.
+  pub group: Option<Pubkey>, // The group this bet is associated with for Group Battle.
 
   // --- Bet Info ---
   pub amount: u64,           // The amount of GRT bet.
-  pub group: Pubkey,         // The group this bet is associated with.
   pub asset: Pubkey,         // The asset this bet is associated with.
   pub direction: BetDirection, // The bet type (Up, Down, PercentageChangeBps).
   pub claimed: bool,         // Whether the reward has been claimed.
@@ -800,17 +802,18 @@ Initializes the program for the first time. Creates a `Config` account that stor
 _None_
 
 #### Arguments
-| Name            | Type      | Description                          |
-|----------------|------------|-------------------------------------|
-| `keeper_authorities`   | `Vec<Pubkey>` | List of authorized keeper authority account addresses
-| `token_mint`   | `Pubkey`   | The address of the GRT token mint                 |
-| `treasury`      | `Pubkey`   | The address of the treasury account                 |
-| `fee_single_asset_bps`       | `u16`      | The fee for single asset bets in basis points (bps) |
-| `fee_group_battle_bps`      | `u16`      | The fee for group battle bets in basis points (bps) |
-| `min_bet_amount` | `u64`      | The minimum amount required to place a bet    |
-| `min_time_factor_bps` | `u16`      | The minimum time factor in basis points (bps) (e.g., 5000 for 0.5) |
-| `max_time_factor_bps` | `u16`      | The maximum time factor in basis points (bps) (e.g., 10000 for 1.0) |
-| `default_time_factor_bps` | `u16`      | The default time factor in basis points (bps) (e.g., 7500 for 0.75) |
+| Name                     | Type           | Description                          |
+|-------------------------|----------------|-------------------------------------|
+| `keeper_authorities`    | `Vec<Pubkey>`  | List of authorized keeper authority account addresses |
+| `token_mint`            | `Pubkey`       | The address of the GRT token mint |
+| `treasury`              | `Pubkey`       | The address of the treasury account |
+| `fee_single_asset_bps`  | `u16`          | The fee for single asset bets in basis points (bps) |
+| `fee_group_battle_bps`  | `u16`          | The fee for group battle bets in basis points (bps) |
+| `min_bet_amount`        | `u64`          | The minimum amount required to place a bet |
+| `bet_cutoff_window_secs`| `i64`          | Window (in seconds) before `end_time` when betting closes |
+| `min_time_factor_bps`   | `u16`          | The minimum time factor in bps (e.g., 5000 for 0.5) |
+| `max_time_factor_bps`   | `u16`          | The maximum time factor in bps (e.g., 10000 for 1.0) |
+| `default_time_factor_bps` | `u16`        | The default time factor in bps (e.g., 7500 for 0.75) |
 
 #### Validations
 - Ensure `config` has not been initialized (no previous data exists)
@@ -818,6 +821,7 @@ _None_
 - `initializer` must be a signer
 - `keeper_authorities` must not be empty
 - `min_bet_amount` must be greater than `0`
+- `bet_cutoff_window_secs >= 0`
 - `min_time_factor_bps`, `max_time_factor_bps`, and `default_time_factor_bps` must be between `0` and `10_000`
 - `min_time_factor_bps <= max_time_factor_bps`
 
@@ -831,6 +835,7 @@ _None_
    - `fee_single_asset_bps = fee_single_asset_bps`
    - `fee_group_battle_bps = fee_group_battle_bps`
    - `min_bet_amount = min_bet_amount`
+   - `bet_cutoff_window_secs = bet_cutoff_window_secs`
 3. Set default fields:
    - `status = Active`
    - `current_round_counter = 0`
@@ -1153,6 +1158,7 @@ _None_
    - `vault = vault.key()`
    - `vault_bump = bumps.vault`
    - `status = Scheduled`
+   - `bet_cutoff_time = max(end_time - config.bet_cutoff_window_secs, start_time)`
    - `created_at = Clock::now()`
 3. Increment `config.current_round_counter` by 1
 
@@ -1507,7 +1513,7 @@ _None_
 #### Validations
 - `config.status == Active`
 - `round.status == Active`
-- `Clock::now() < round.end_time`
+- `Clock::now() < round.bet_cutoff_time`
 - `amount >= config.min_bet_amount`
 
 #### Logic

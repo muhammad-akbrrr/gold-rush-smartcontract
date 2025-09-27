@@ -176,22 +176,24 @@ pub fn handler(ctx: Context<SettleGroupRound>) -> Result<()> {
             GoldRushError::InvalidBetAccount
         );
 
-        // Decide result based on group winners. In GroupBattle, a bet wins
-        // if the bet.group PDA corresponds to any winner_group_ids.
-        // winner_group_ids stores numeric group IDs; reconstruct expected GroupAsset PDA
-        // and compare with bet.group.
-        let is_winner = round.winner_group_ids.iter().any(|gid| {
-            let expected_group_pda = Pubkey::find_program_address(
-                &[
-                    GROUP_ASSET_SEED.as_bytes(),
-                    round.key().as_ref(),
-                    &gid.to_le_bytes(),
-                ],
-                ctx.program_id,
-            )
-            .0;
-            expected_group_pda == bet.group
-        });
+        // Decide result safely. A bet wins if its group (when present)
+        // matches any winner_group_ids' PDA.
+        let is_winner = if let Some(group_key) = bet.group {
+            round.winner_group_ids.iter().any(|gid| {
+                let expected_group_pda = Pubkey::find_program_address(
+                    &[
+                        GROUP_ASSET_SEED.as_bytes(),
+                        round.key().as_ref(),
+                        &gid.to_le_bytes(),
+                    ],
+                    ctx.program_id,
+                )
+                .0;
+                expected_group_pda == group_key
+            })
+        } else {
+            false
+        };
 
         if is_winner {
             bet.status = BetStatus::Won;
