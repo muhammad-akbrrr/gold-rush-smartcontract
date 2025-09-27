@@ -100,12 +100,12 @@ pub mod gold_rush {
         insert_asset::handler(ctx, symbol)
     }
 
-    pub fn capture_start_price(ctx: Context<CaptureStartPrice>) -> Result<()> {
-        capture_start_price::handler(ctx)
-    }
-
     pub fn cancel_round(ctx: Context<CancelRound>) -> Result<()> {
         cancel_round::handler(ctx)
+    }
+
+    pub fn capture_start_price(ctx: Context<CaptureStartPrice>) -> Result<()> {
+        capture_start_price::handler(ctx)
     }
 
     pub fn start_round(ctx: Context<StartRound>) -> Result<()> {

@@ -1228,35 +1228,43 @@ _None_
 ### Keeper: Start Round
 
 #### Purpose
-This instruction is executed by the Keeper to start a round that was previously in the Scheduled state.
-When called, the round becomes Active, allowing users to place bets (place_bet()).
+This instruction is executed by the Keeper to start a round that was previously in the `Scheduled` status.
+When invoked, the round becomes `Active,` allowing the user to `place_bet()`.
+
+For single-asset games, this instruction also fetches the starting price directly from the oracle provided as the remaining account.
 
 #### Context
 | Field         | Type                  | Description                                |
 |-------------------|-----------------------|----------------------------------------------|
-| `signer` | `Signer` | The keeper authorized to trigger the start of the round. |
-| `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
-| `round` | `Account<Round>` (PDA) | The round currently in `Scheduled` status. |
+| `signer` | `Signer` | The keeper who is authorized to start the round. |
+| `config` | `Account<Config>` (PDA) | Global configuration account. |
+| `round` | `Account<Round>` (PDA, mut) | The currently `Scheduled` round. |
+| `system_program` | `Program<System>` | Program sistem. |
+
+Remaining accounts (for Single-Asset only):
+- `price_oracle_account` (readonly) — the price oracle account (e.g., Pyth price account) that will be read to obtain the start price.
 
 #### Arguments
-| Name            | Type       | Description                            |
-|----------------|-------------|--------------------------------------------|
-| `asset_price` | `u64` | The price of the asset being staked. |
+_None_
 
 #### Validations
 - `config.status == Active`
 - `keeper` must be in `config.keeper_authorities`
 - `round.status == Scheduled`
 - `Clock::now() >= round.start_time`
-- `asset_price > 0`
+- If Single-Asset: price from `price_oracle_account` is valid (fresh, > 0) after normalization
 
 #### Logic
-1. Change `round.status` to `Active`
-2. Set `round.start_price = asset_price`
+1. If the round is Single-Asset:
+- Read the price from `price_oracle_account` (e.g., Pyth), normalize to the internal `u64` format.
+- Ensure price is > 0 and not stale; otherwise, return an error.
+- Set `round.start_price = Some(price)`.
+2. If the round is Group Battle, assume the starting price of each asset has been previously captured via `capture_start_price`; no oracle reading is required.
+3. Set `round.status = Active`.
 
 #### Emits / Side Effects
-- Change `Round` status from `Scheduled` → `Active`
-- Indicate that users can now start placing bets (`place_bet()`) on this round
+- Changes the `Round` status from `Scheduled` to `Active`.
+- Indicates that users can start placing `place_bet()` bets on this round.
 
 ## Errors
 | Code                  | Meaning                                             |
@@ -1265,7 +1273,8 @@ When called, the round becomes Active, allowing users to place bets (place_bet()
 | `UnauthorizedKeeper` | If `signer` is not part of `config.keeper_authorities` |
 | `InvalidRoundStatus` | If `round.status` is not `Scheduled` |
 | `RoundNotReady` | If `Clock::now() < round.start_time` |
-| `InvalidAssetPrice` | If `asset_price == 0` |
+| `OracleError` | If oracle price reading/validation fails (Single-Asset) |
+| `InvalidAssetPrice` | If the normalized price is invalid (> 0 is not met) |
 
 ---
 

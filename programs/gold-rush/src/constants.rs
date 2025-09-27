@@ -36,8 +36,10 @@ pub enum RoundStatus {
 /// Enum for market types
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace)]
 pub enum MarketType {
-    GoldPrice,
-    StockPrice,
+    /// Single-asset market; start/final price read directly from an oracle
+    SingleAsset,
+    /// Group-battle market; prices captured per-asset and aggregated by groups
+    GroupBattle,
 }
 
 /// Enum for bet types

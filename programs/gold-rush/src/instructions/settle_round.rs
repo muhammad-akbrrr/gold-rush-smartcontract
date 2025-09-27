@@ -95,8 +95,8 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
 
     // validate remaining accounts
     require!(
-        ctx.remaining_accounts.len() <= MAX_BETS_SETTLE,
-        GoldRushError::InvalidBettorsLength
+        ctx.remaining_accounts.len() <= MAX_REMAINING_ACCOUNTS,
+        GoldRushError::InvalidRemainingAccountsLength
     );
 
     // if no bets at all, end round immediately
@@ -121,8 +121,8 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
     // If first batch, compute and lock fee and reward pool once
     if round.total_reward_pool == 0 && round.total_fee_collected == 0 {
         let fee_bps = match round.market_type {
-            MarketType::GoldPrice => config.fee_gold_price_bps,
-            MarketType::StockPrice => config.fee_stock_price_bps,
+            MarketType::SingleAsset => config.fee_gold_price_bps,
+            MarketType::GroupBattle => config.fee_stock_price_bps,
         };
         let fee_amount = round
             .total_pool

@@ -1,4 +1,4 @@
-use crate::{constants::*, error::GoldRushError, state::*};
+use crate::{constants::*, error::GoldRushError, state::*, utils::*};
 use anchor_lang::prelude::*;
 
 #[derive(Accounts)]
@@ -54,9 +54,27 @@ pub fn handler(ctx: Context<StartRound>) -> Result<()> {
 
     let round = &mut ctx.accounts.round;
 
-    // set round fields
+    // Single-Asset: validate by market type, take the price from the oracle
+    if matches!(round.market_type, MarketType::SingleAsset) {
+        // Expect at least 1 remaining account as the price feed account (e.g. Pyth)
+        require!(
+            !ctx.remaining_accounts.is_empty(),
+            GoldRushError::InvalidRemainingAccountsLength
+        );
+
+        let price_ai = &ctx.remaining_accounts[0];
+        let now = Clock::get()?.unix_timestamp;
+        let price =
+            load_pyth_price_normalized(price_ai, now, ASSET_PRICE_STALENESS_THRESHOLD_SECONDS)?;
+
+        require!(price > 0, GoldRushError::InvalidAssetPrice);
+
+        // set start price for single-asset
+        round.start_price = Some(price);
+    }
+
+    // activate round
     round.status = RoundStatus::Active;
-    round.start_price = Some(asset_price);
 
     Ok(())
 }

@@ -16,7 +16,7 @@ pub fn calculate_direction_factor(
             let abs_percent = percent.checked_abs().ok_or(GoldRushError::Overflow)? as u64;
 
             match market_type {
-                MarketType::GoldPrice => {
+                MarketType::SingleAsset => {
                     let square = abs_percent
                         .checked_mul(abs_percent)
                         .ok_or(GoldRushError::Overflow)?;
@@ -29,7 +29,7 @@ pub fn calculate_direction_factor(
 
                     return Ok(factor_bps);
                 }
-                MarketType::StockPrice => {
+                MarketType::GroupBattle => {
                     let scaled = abs_percent
                         .checked_mul(100)
                         .ok_or(GoldRushError::Overflow)?;
@@ -54,11 +54,12 @@ mod tests {
         let default = 1_000;
 
         assert_eq!(
-            calculate_direction_factor(&MarketType::GoldPrice, &BetDirection::Up, default).unwrap(),
+            calculate_direction_factor(&MarketType::SingleAsset, &BetDirection::Up, default)
+                .unwrap(),
             default
         );
         assert_eq!(
-            calculate_direction_factor(&MarketType::StockPrice, &BetDirection::Down, default)
+            calculate_direction_factor(&MarketType::GroupBattle, &BetDirection::Down, default)
                 .unwrap(),
             default
         );
@@ -69,7 +70,7 @@ mod tests {
         let default = 1_000;
         assert_eq!(
             calculate_direction_factor(
-                &MarketType::GoldPrice,
+                &MarketType::SingleAsset,
                 &BetDirection::PercentageChangeBps(0),
                 default
             )
@@ -83,7 +84,7 @@ mod tests {
         let default = 1_000;
 
         let result = calculate_direction_factor(
-            &MarketType::GoldPrice,
+            &MarketType::SingleAsset,
             &BetDirection::PercentageChangeBps(5),
             default,
         )
@@ -96,7 +97,7 @@ mod tests {
         let default = 1_000;
 
         let result = calculate_direction_factor(
-            &MarketType::GoldPrice,
+            &MarketType::SingleAsset,
             &BetDirection::PercentageChangeBps(-3),
             default,
         )
@@ -109,7 +110,7 @@ mod tests {
         let default = 1_000;
 
         let result = calculate_direction_factor(
-            &MarketType::StockPrice,
+            &MarketType::GroupBattle,
             &BetDirection::PercentageChangeBps(4),
             default,
         )
@@ -122,7 +123,7 @@ mod tests {
         let default = 1_000;
 
         let result = calculate_direction_factor(
-            &MarketType::StockPrice,
+            &MarketType::GroupBattle,
             &BetDirection::PercentageChangeBps(-2),
             default,
         )

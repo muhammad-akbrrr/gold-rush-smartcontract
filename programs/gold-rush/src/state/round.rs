@@ -14,6 +14,8 @@ pub struct Round {
 
     // --- State ---
     pub status: RoundStatus, // The current status of the round (Scheduled, Active, PendingSettlement, Ended).
+    pub start_price: Option<u64>, // Only for single-asset markets
+    pub final_price: Option<u64>, // Only for single-asset markets
     pub total_pool: u64,     // The total amount of GRT bet in this round.
     pub total_bets: u64,     // The total number of bets placed in this round.
     pub total_fee_collected: u64, // The total fees collected for this round.
