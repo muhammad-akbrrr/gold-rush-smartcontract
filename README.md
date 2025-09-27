@@ -1551,12 +1551,12 @@ $$
 
 ### User: Withdraw Bet
 #### Purpose
-This instruction allows the User to **cancel/withdraw their bet** (`withdraw_bet`) from an active round before the round's `end_time` is reached. The bet's funds are refunded back to the User, and the bet account is closed.
+This instruction allows the User to **cancel/withdraw their bet** (`withdraw_bet`) from an active round before the round's `bet_cutoff_time` is reached. The bet's funds are refunded back to the User, and the bet account is closed.
 
 #### Context
 | Field         | Type                    | Description                                         |
 |-------------------|----------------------------|----------------------------------------------------------|
-| `bettor` | `Signer` | The address of the player placing the bet. |
+| `signer` | `Signer` | The address of the player placing the bet. |
 | `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
 | `round` | `Account<Round>` (PDA) | The round to be settled. |
 | `bet` | `Account<Bet>` (PDA) | The bet account previously initialized for this round. |
@@ -1570,10 +1570,10 @@ _None_
 _None_
 
 #### Validations
-- `Clock::now() < round.end_time`
+- `Clock::now() < round.bet_cutoff_time`
 - `config.status == Active`
 - `round.status == Active`
-- `bet.user == bettor.key()`
+- `bet.user == signer.key()`
 - `bet.status == Pending`
 - `round_vault` matches `round.vault`
 

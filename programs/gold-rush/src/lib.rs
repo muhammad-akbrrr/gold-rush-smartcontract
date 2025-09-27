@@ -120,15 +120,19 @@ pub mod gold_rush {
         place_bet::handler(ctx, amount, direction)
     }
 
+    pub fn withdraw_bet(ctx: Context<WithdrawBet>) -> Result<()> {
+        withdraw_bet::handler(ctx)
+    }
+
     pub fn settle_single_round(ctx: Context<SettleSingleRound>) -> Result<()> {
         settle_single_round::handler(ctx)
     }
 
-    pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
-        claim_reward::handler(ctx)
-    }
-
     pub fn settle_group_round(ctx: Context<SettleGroupRound>) -> Result<()> {
         settle_group_round::handler(ctx)
+    }
+
+    pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
+        claim_reward::handler(ctx)
     }
 }

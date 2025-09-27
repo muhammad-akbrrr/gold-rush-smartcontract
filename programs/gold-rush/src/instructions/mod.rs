@@ -17,6 +17,7 @@ pub mod settle_single_round;
 pub mod start_round;
 pub mod unpause_program;
 pub mod update_config;
+pub mod withdraw_bet;
 
 pub use cancel_round::*;
 pub use capture_start_price::*;
@@ -35,3 +36,4 @@ pub use settle_single_round::*;
 pub use start_round::*;
 pub use unpause_program::*;
 pub use update_config::*;
+pub use withdraw_bet::*;
