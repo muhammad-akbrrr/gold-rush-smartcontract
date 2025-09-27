@@ -20,6 +20,7 @@ pub struct Round {
     pub total_reward_pool: u64, // The total reward pool after deducting fees.
     pub winners_weight: u64, // The total weight of winning bets (for reward calculation). Default to 0 if no winners.
     pub settled_bets: u64,   // Number of bets that have been processed (for incremental settlement)
+    pub cancelled_bets: u64, // Number of bets that have been cancelled in this round.
     #[max_len(MAX_WINNER_GROUP_IDS)]
     pub winner_group_ids: Vec<u64>, // The IDs of the groups that won the round.
     pub total_groups: u64,   // The total number of groups created in this round.

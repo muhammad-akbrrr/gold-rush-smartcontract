@@ -15,6 +15,9 @@ pub enum GoldRushError {
     #[msg("Program is in emergency pause state")]
     EmergencyPaused = 0x1003,
 
+    #[msg("Invalid remaining accounts length")]
+    InvalidRemainingAccountsLength = 0x1004,
+
     // Configuration Errors (0x2000 - 0x2999)
     #[msg("Fee basis points must be less than 10000")]
     InvalidFee = 0x2000,

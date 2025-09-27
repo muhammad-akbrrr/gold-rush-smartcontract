@@ -51,12 +51,12 @@ pub fn handler(ctx: Context<CaptureStartPrice>) -> Result<()> {
 
     // validate remaining accounts
     require!(
-        remaining_accounts.len() > 0,
-        GoldRushError::InvalidAssetAccount
+        remaining_accounts.len() <= MAX_REMAINING_ACCOUNTS,
+        GoldRushError::InvalidRemainingAccountsLength
     );
     require!(
         remaining_accounts.len() % 2 == 0,
-        GoldRushError::InvalidAssetAccount
+        GoldRushError::InvalidRemainingAccountsLength
     );
 
     let round = &mut ctx.accounts.round;

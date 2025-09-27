@@ -1170,8 +1170,6 @@ Users can only place bets while the round is in Active status.
 ### Admin: Cancel Round
 Cancels an active or scheduled round and refunds all bets. Only the admin can perform this action
 
----
-
 #### Purpose
 Allows the Admin to cancel a round that has not been fully settled yet. All user stakes are refunded from the round vault, bet accounts are closed, and finally the round (and vault) can be closed when empty.
 

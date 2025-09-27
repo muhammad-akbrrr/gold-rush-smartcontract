@@ -104,6 +104,10 @@ pub mod gold_rush {
         capture_start_price::handler(ctx)
     }
 
+    pub fn cancel_round(ctx: Context<CancelRound>) -> Result<()> {
+        cancel_round::handler(ctx)
+    }
+
     pub fn start_round(ctx: Context<StartRound>) -> Result<()> {
         start_round::handler(ctx)
     }
