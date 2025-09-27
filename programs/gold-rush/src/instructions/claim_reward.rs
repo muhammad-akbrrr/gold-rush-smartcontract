@@ -79,6 +79,24 @@ impl<'info> ClaimReward<'info> {
 
         require!(self.bet.claimed == false, GoldRushError::AlreadyClaimed);
 
+        require_keys_eq!(
+            self.round_vault.mint,
+            self.mint.key(),
+            GoldRushError::InvalidMint
+        );
+        require_keys_eq!(
+            self.bettor_token_account.mint,
+            self.mint.key(),
+            GoldRushError::InvalidMint
+        );
+
+        if self.bet.status == BetStatus::Won {
+            require!(
+                self.round.winners_weight > 0,
+                GoldRushError::RewardCalculationError
+            );
+        }
+
         Ok(())
     }
 }

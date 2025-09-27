@@ -1606,11 +1606,11 @@ This instruction allows the User to claim their reward (`claim_reward`) if their
 #### Context
 | Field         | Type                    | Description                                         |
 |-------------------|----------------------------|----------------------------------------------------------|
-| `bettor` | `Signer` | The address of the player placing the bet. |
+| `signer` | `Signer` | The address of the player claiming the reward. |
 | `config` | `Account<Config>` (PDA) | PDA account to store global configuration data. |
 | `round` | `Account<Round>` (PDA) | The round to be settled. |
 | `bet` | `Account<Bet>` (PDA) | The bet account previously initialized for this round. |
-| `round_vault` | `AccountInfo` (PDA) | The vault account holding bets for this round. |
+| `round_vault` | `Account<TokenAccount>` (PDA) | The vault account holding bets for this round (must use `mint`). |
 | `bettor_token_account` | `Account<TokenAccount>` | The token account of the bettor to transfer GRT from. |
 | `mint` | `Account<Mint>` | Mint token used for betting. |
 | `token_program` | `Program<Token>` | SPL Token program. |
@@ -1623,12 +1623,13 @@ _None_
 _None_
 
 #### Validations
-- `config.status == Active` or `EmergencyPaused`
+- `config.status in { Active, EmergencyPaused }`
 - `round.status == Ended`
 - `bet.user == bettor.key()`
-- `bet.status == Won`
+- `bet.status in { Won, Draw }` (Won gets proportional reward; Draw returns stake)
 - `bet.claimed == false`
-- `round_vault` matches `round.vault`
+- `round_vault.mint == mint` and `bettor_token_account.mint == mint`
+- If `bet.status == Won`: `round.winners_weight > 0`
 
 #### Logic
 1. Calculate reward amount based on:
