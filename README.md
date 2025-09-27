@@ -1266,7 +1266,7 @@ _None_
 - Changes the `Round` status from `Scheduled` to `Active`.
 - Indicates that users can start placing `place_bet()` bets on this round.
 
-## Errors
+#### Errors
 | Code                  | Meaning                                             |
 |-----------------------------|---------------------------------------------------|
 | `ProgramPaused` | If `config.status != Active` |
@@ -1278,86 +1278,54 @@ _None_
 
 ---
 
-### Keeper: Settle Round - Single Asset
+### Keeper: Settle Single-Asset Round (`settle_single_round`)
 #### Purpose
-This instruction is executed by the Keeper to settle a round that has reached its end_time.
-The settlement process includes:
-- Retrieving the final price (`final_price`) from the oracle
-- Determining the winner and loser
-- Calculating the `winners_weight`
-- Changing the status of each bet to `Won`, `Lost`, or `Draw`
-- Collecting fees for the treasury
-
-Upon successful settlement, the round status changes to **Ended**.
-
-> Note: For Group Battle rounds, see “Keeper: Settle Round - Group Battle”, which relies on `winner_group_ids` instead of a single price change.
+Settle a Single-Asset round after `end_time` by using the final price, marking bets as Won/Lost/Draw, and collecting fees.
 
 #### Context
 | Field         | Type                    | Description                                         |
 |-------------------|----------------------------|----------------------------------------------------------|
-| `signer` | `Signer` | The keeper authorized to execute settlements. |
-| `config` | `Account<Config>` (PDA) | Stores global configuration data (status, fee bps, keeper list, treasury). |
-| `round` | `Account<Round>` (PDA) | The round to be settled. |
-| `round_vault` | `Account<TokenAccount>` (PDA) | The token vault for the round. |
-| `treasury` | `UncheckedAccount` | The treasury pubkey specified in config. |
-| `treasury_token_account` | `Account<TokenAccount>` (ATA) | The treasury ATA for receiving fees. |
-| `mint` | `Account<Mint>` | Mint token used for betting. |
+| `signer` | `Signer` | Keeper authorized to execute settlement. |
+| `config` | `Account<Config>` (PDA) | Global configuration (status, fee bps, keepers, treasury). |
+| `round` | `Account<Round>` (PDA, mut) | Target round (must be SingleAsset). |
+| `round_vault` | `Account<TokenAccount>` (PDA, mut) | Token vault for the round. |
+| `treasury` | `UncheckedAccount` | Treasury pubkey from config. |
+| `treasury_token_account` | `Account<TokenAccount>` (ATA) | Treasury ATA to receive fees. |
+| `mint` | `Account<Mint>` | Token mint used for betting. |
 | `token_program` | `Program<Token>` | SPL Token program. |
-| `associated_token_program` | `Program<AssociatedToken>` | Program to create an ATA treasury if it doesn't already exist. |
+| `associated_token_program` | `Program<AssociatedToken>` | For creating treasury ATA if needed. |
 | `system_program` | `Program<System>` | System program. |
 
 #### Arguments
-| Name         | Type      | Description                                      |
-|---------------|---------------|-------------------------------------------------|
-| **asset_price** | `u64` | The final asset price used for settlement. |
+_None_
 
-## Validations
-- `signer` must be in `config.keeper_authorities`
+#### Validations
+- `signer` in `config.keeper_authorities`
 - `config.status == Active`
-- `round.status` must be `Active` or `PendingSettlement`
+- `round.market_type == SingleAsset`
+- `round.status` in `{ Active, PendingSettlement }`
 - `Clock::now() >= round.end_time`
-- `remaining_accounts.len() <= MAX_BETS_SETTLE`
+- `remaining_accounts.len() <= MAX_REMAINING_ACCOUNTS`
+- `round.start_price.is_some()` (set at round start)
 
-## Logic
-1. If `asset_price == 0`:
-    - Change `round.status = PendingSettlement`
-    - Return (keeper will retry later)
-2. If `asset_price > 0`:
-    - Set `round.final_price = asset_price`
-    - Calculate the price difference: `asset_price - round.start_price`
-    - For each bet in `remaining_accounts`:
-      - Validate the PDA bet
-      - Determine the bet result with `is_bet_winner`
-        - **True** → `bet.status = Won`
-        - **False** → `bet.status = Lost`
-        - **Draw** → `bet.status = Draw`
-      - Add `winners_weight` if winning
-      - Save the bet status changes
-    - Calculate the fee based on `config.fee_*_bps`
-    - Transfer the fee from `round_vault` to `treasury_token_account` using the PDA signer
-    - Update the round:
-      - `round.winners_weight = winners_weight` 
-      - `round.total_fee_collected = fee_amount` 
-      - `round.final_price = asset_price` 
-      - `round.status = Ended` 
-      - `round.settled_at = Clock::now()`
+#### Logic
+1. Read final price from the oracle account (first remaining account), normalize and validate freshness.
+2. Set `round.final_price`.
+3. Compute `price_change = final_price - start_price`.
+   - For each `Bet` PDA in remaining accounts: determine Won/Lost/Draw via `is_bet_winner`, accumulate `winners_weight`, serialize back.
+   - Compute `fee_amount` from `fee_gold_price_bps` (Single-Asset), transfer from `round_vault` to treasury ATA.
+   - Update round fields: `winners_weight`, `total_fee_collected`, `final_price`, and status to `Ended` when all bets are processed; otherwise mark `PendingSettlement`.
 
-## Emits / Side Effects
-- All bets change status from `Pending` → `Won` / `Lost` / `Draw`
-- `round.status` changes to `Ended`
-- `round.final_price`, `round.winners_weight`, and `round.total_fee_collected` are saved
+#### Emits / Side Effects
+- Bets move from `Pending` to `Won`/`Lost`/`Draw`.
+- `round.status` transitions to `Ended` when complete.
+- Saves `final_price`, `winners_weight`, `total_fee_collected`.
 
-## Errors
-| Code                        | Meaning                                                 |
-|--------------------------------|-------------------------------------------------------------|
-| `UnauthorizedKeeper` | If `signer` is not part of `config.keeper_authorities` |
-| `InvalidRoundStatus` | If `round.status` is not `Active` or `PendingSettlement` |
-| `RoundNotReady` | If `Clock::now() < round.end_time` |
-| `ProgramPaused` | If `config.status != Active` |
-| `InvalidTreasuryAuthority` | If `treasury` does not match config |
-| `InvalidBetAccount` | If PDA bet does not match |
-| `Overflow` | If an overflow occurred during calculation |
-| `InvalidBettorsLength` | If the number of bets > `MAX_BETS_SETTLE`
+#### Errors
+Same as before, plus guard for wrong `market_type`.
+
+---
+
 ### Keeper: Capture Start Price (Group Battle)
 Batch-captures start prices for multiple assets via remaining accounts.
 
@@ -1442,8 +1410,54 @@ Remaining accounts: all `GroupAsset` PDAs for the round (readonly, batched if ne
 
 ---
 
-### Keeper: Settle Round - Group Battle
-Same entrypoint as settle but relying on `winner_group_ids`.
+### Keeper: Settle Group-Battle Round (`settle_group_round`)
+#### Purpose
+Settle a Group-Battle round using precomputed `winner_group_ids` after all group finalization steps are done.
+
+Prerequisites (executed before calling this instruction):
+- `capture_end_price` (per group’s assets) completed
+- `finalize_group_asset` (per group) completed
+- `finalize_groups_for_round` (set `winner_group_ids` on `Round`)
+
+#### Context
+| Field         | Type                    | Description                                         |
+|-------------------|----------------------------|----------------------------------------------------------|
+| `signer` | `Signer` | Keeper authorized to execute settlement. |
+| `config` | `Account<Config>` (PDA) | Global configuration (status, fee bps, keepers, treasury). |
+| `round` | `Account<Round>` (PDA, mut) | Target round (must be GroupBattle). |
+| `round_vault` | `Account<TokenAccount>` (PDA, mut) | Token vault for the round. |
+| `treasury` | `UncheckedAccount` | Treasury pubkey from config. |
+| `treasury_token_account` | `Account<TokenAccount>` (ATA) | Treasury ATA to receive fees. |
+| `mint` | `Account<Mint>` | Token mint used for betting. |
+| `token_program` | `Program<Token>` | SPL Token program. |
+| `associated_token_program` | `Program<AssociatedToken>` | For creating treasury ATA if needed. |
+| `system_program` | `Program<System>` | System program. |
+
+#### Arguments
+_None_
+
+#### Validations
+- `signer` in `config.keeper_authorities`
+- `config.status == Active`
+- `round.market_type == GroupBattle`
+- `round.status` in `{ Active, PendingSettlement }`
+- `Clock::now() >= round.end_time`
+- `remaining_accounts.len() <= MAX_REMAINING_ACCOUNTS`
+- `round.winner_group_ids.len() > 0`
+
+#### Logic
+1. For each `Bet` PDA in remaining accounts:
+   - A bet wins if `bet.group` ∈ `winner_group_ids`. Direction logic uses group’s `avg_growth_rate_bps` sign.
+   - Accumulate `winners_weight`, serialize back.
+2. Compute `fee_amount` from `fee_stock_price_bps` (Group-Battle), transfer from `round_vault` to treasury ATA.
+3. Update round fields: `winners_weight`, `total_fee_collected`. Set `status = Ended` when all bets processed; otherwise `PendingSettlement`.
+
+#### Emits / Side Effects
+- Bets move from `Pending` to `Won`/`Lost`/`Draw`.
+- `round.status` transitions to `Ended` when complete.
+
+#### Errors
+Same as Single-Asset settlement, plus guard for missing `winner_group_ids`.
 
 #### Logic differences
 - Instead of price change, use `winner_group_ids` to determine winning bets.

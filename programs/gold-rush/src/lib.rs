@@ -116,8 +116,8 @@ pub mod gold_rush {
         place_bet::handler(ctx, amount, direction)
     }
 
-    pub fn settle_round(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
-        settle_round::handler(ctx, asset_price)
+    pub fn settle_single_round(ctx: Context<SettleSingleRound>) -> Result<()> {
+        settle_single_round::handler(ctx)
     }
 
     pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
