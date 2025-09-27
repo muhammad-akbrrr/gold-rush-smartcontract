@@ -139,9 +139,9 @@ sequenceDiagram
           Keeper->>Program: settle_round - max 20 bets per call
           Program-->>Program: mark Won or Lost using winner_group_ids and transfer fee
           Program-->>Keeper: ack - round.status set Ended
-        else market_type == SingleAsset
-          Keeper->>Oracle: get final price
-          Keeper->>Program: settle_round - final price and max 20 bets per call
+      else market_type == SingleAsset
+        Keeper->>Oracle: get final price
+        Keeper->>Program: settle_single_round - oracle + max 20 bets per call
           Program-->>Program: mark Won or Lost via price change and transfer fee
           Program-->>Keeper: ack - round.status set Ended
         end
@@ -355,8 +355,8 @@ pub struct Config {
   pub treasury: Pubkey,                // The address where the fees are sent.
 
   // --- Fee Config ---
-  pub fee_gold_price_bps: u16,         // The fee percentage charged on bets based on Gold Price.
-  pub fee_stock_price_bps: u16,        // The fee percentage charged on bets based on stock price.
+  pub fee_single_asset_bps: u16,       // The fee percentage charged on bets based on Single Asset.
+  pub fee_group_battle_bps: u16,       // The fee percentage charged on bets based on Group Battle.
 
   // --- Betting Rules ---
   pub min_bet_amount: u64,             // The minimum bet amount.
@@ -520,8 +520,8 @@ The Gold Rush smart contract charges a fee on each bet to sustain the platform. 
 
 ### Fee Structure
 
-- **Gold Price Bets**: `fee_gold_price_bps` (in basis points, e.g., 50 bps = 0.5%)
-- **Stock Price Bets**: `fee_stock_price_bps` (in basis points, e.g., 50 bps = 0.5%)
+- **Single Asset Bets**: `fee_single_asset_bps` (in basis points, e.g., 50 bps = 0.5%)
+- **Group Battle Bets**: `fee_group_battle_bps` (in basis points, e.g., 50 bps = 0.5%)
 - **Treasury Account**: `treasury` (the account that receives collected fees)
 
 > Note: Fee is calculated on the bet amount and deducted only at settlement, not at the time of placing a bet. This allows for refunds in case the round is cancelled.
@@ -553,7 +553,7 @@ $$
 ### Settlement Flow for Fees
 
 1. **Round ends**: Keeper triggers the settlement process after `end_time`.  
-2. **Calculate fees**: Fee is calculated for each bet based on `fee_gold_price_bps` or `fee_stock_price_bps`.  
+2. **Calculate fees**: Fee is calculated for each bet based on `fee_single_asset_bps` or `fee_group_battle_bps`.  
 3. **Transfer to treasury**: `total_fee_collected` is transferred to the treasury account.  
 4. **Compute reward pool**: Remaining GRT is assigned to `total_reward_pool` for winners.  
 
@@ -796,14 +796,17 @@ Initializes the program for the first time. Creates a `Config` account that stor
 | `config`         | `Account<Config>` (PDA)     | PDA account to store global configuration data.         |
 | `system_program` | `Program<System>`     | The system program used to create the `config` account.   |
 
+#### Remaining Accounts
+_None_
+
 #### Arguments
 | Name            | Type      | Description                          |
 |----------------|------------|-------------------------------------|
 | `keeper_authorities`   | `Vec<Pubkey>` | List of authorized keeper authority account addresses
 | `token_mint`   | `Pubkey`   | The address of the GRT token mint                 |
 | `treasury`      | `Pubkey`   | The address of the treasury account                 |
-| `fee_gold_price_bps`       | `u16`      | The fee for gold price bets in basis points (bps) |
-| `fee_stock_price_bps`      | `u16`      | The fee for stock price bets in basis points (bps) |
+| `fee_single_asset_bps`       | `u16`      | The fee for single asset bets in basis points (bps) |
+| `fee_group_battle_bps`      | `u16`      | The fee for group battle bets in basis points (bps) |
 | `min_bet_amount` | `u64`      | The minimum amount required to place a bet    |
 | `min_time_factor_bps` | `u16`      | The minimum time factor in basis points (bps) (e.g., 5000 for 0.5) |
 | `max_time_factor_bps` | `u16`      | The maximum time factor in basis points (bps) (e.g., 10000 for 1.0) |
@@ -811,7 +814,7 @@ Initializes the program for the first time. Creates a `Config` account that stor
 
 #### Validations
 - Ensure `config` has not been initialized (no previous data exists)
-- `fee_gold_price_bps` and `fee_stock_price_bps` must be `< 10_000` (100%)
+- `fee_single_asset_bps` and `fee_group_battle_bps` must be `< 10_000` (100%)
 - `initializer` must be a signer
 - `keeper_authorities` must not be empty
 - `min_bet_amount` must be greater than `0`
@@ -825,8 +828,8 @@ Initializes the program for the first time. Creates a `Config` account that stor
    - `keeper_authorities = keeper_authorities`
    - `token_mint = token_mint`
    - `treasury = treasury`
-   - `fee_gold_price_bps = fee_gold_price_bps`
-   - `fee_stock_price_bps = fee_stock_price_bps`
+   - `fee_single_asset_bps = fee_single_asset_bps`
+   - `fee_group_battle_bps = fee_group_battle_bps`
    - `min_bet_amount = min_bet_amount`
 3. Set default fields:
    - `status = Active`
@@ -853,15 +856,14 @@ Initializes the program for the first time. Creates a `Config` account that stor
 #### Purpose
 Allows the admin to update global configuration settings stored in the `Config` account, such as fee parameters, keeper authorities, treasury address, and minimum bet amount.
 
----
-
 #### Context
 | Field             | Type                  | Description                                      |
 |--------------------|-----------------------|---------------------------------------------------|
 | `admin`              | `Signer`               | The current admin authorized to update the config. |
 | `config`             | `Account<Config>` (PDA)      | PDA account to store global configuration data.         |
 
----
+#### Remaining Accounts
+_None_
 
 #### Arguments
 | Name                     | Type             | Description                                        |
@@ -870,19 +872,15 @@ Allows the admin to update global configuration settings stored in the `Config` 
 | `keeper_authorities`       | `Option<Vec<Pubkey>>` | (Optional) New list of keeper authority addresses. |
 | `token_mint`                | `Option<Pubkey>`    | (Optional) New token mint address. |
 | `treasury`                  | `Option<Pubkey>`    | (Optional) New treasury account address. |
-| `fee_gold_price_bps`        | `Option<u16>`         | (Optional) New fee for gold price bets (bps). |
-| `fee_stock_price_bps`       | `Option<u16>`         | (Optional) New fee for stock price bets (bps). |
+| `fee_single_asset_bps`        | `Option<u16>`         | (Optional) New fee for single asset bets (bps). |
+| `fee_group_battle_bps`       | `Option<u16>`         | (Optional) New fee for group battle bets (bps). |
 | `min_bet_amount`             | `Option<u64>`         | (Optional) New minimum bet amount. |
-
----
 
 #### Validations
 - `admin` must be the current admin stored in `config.admin`
-- `fee_gold_price_bps` and `fee_stock_price_bps` (if provided) must be `< 10_000` (100%)
+- `fee_single_asset_bps` and `fee_group_battle_bps` (if provided) must be `< 10_000` (100%)
 - `keeper_authorities` (if provided) must not be empty
 - `min_bet_amount` (if provided) must be `> 0`
-
----
 
 #### Logic
 1. Check that `admin.key() == config.admin`
@@ -891,16 +889,12 @@ Allows the admin to update global configuration settings stored in the `Config` 
    - `keeper_authorities = keeper_authorities`
    - `token_mint = token_mint`
    - `treasury = treasury`
-   - `fee_gold_price_bps = fee_gold_price_bps`
-   - `fee_stock_price_bps = fee_stock_price_bps`
+   - `fee_single_asset_bps = fee_single_asset_bps`
+   - `fee_group_battle_bps = fee_group_battle_bps`
    - `min_bet_amount = min_bet_amount`
-
----
 
 #### Emits / Side Effects
 - Updates the `Config` account with new global settings
-
----
 
 #### Errors
 | Code                      | Meaning                                      |
@@ -910,6 +904,7 @@ Allows the admin to update global configuration settings stored in the `Config` 
 | `InvalidMinBetAmount`            | If provided `min_bet_amount == 0` |
 | `NoKeeperAuthorities`            | If provided `keeper_authorities` is empty |
 
+---
 
 ### Admin: Pause Program
 
@@ -917,38 +912,27 @@ Allows the admin to update global configuration settings stored in the `Config` 
 Allows the admin to **pause** the entire program by updating the `Config.status` field.  
 When paused, new rounds cannot be created and bets cannot be placed.
 
----
-
 #### Context
 | Field       | Type                | Description                                       |
 |-------------|---------------------|---------------------------------------------------|
 | `admin`     | `Signer`             | The current admin authorized to pause the program. |
 | `config`    | `Account<Config>` (PDA)    | PDA account to store global configuration data.                  |
 
----
-
-#### Arguments
-_None_
-
----
+#### Remaining Accounts
+- First account: `price_oracle_account` (readonly) — the oracle (e.g., Pyth) used to fetch the final price.
+- Next N accounts: `Bet` PDAs (writable) — batched bets to settle in this call.
 
 #### Validations
 - `admin` must be the current admin stored in `config.admin`
 - `config.status` must currently be `Active`
 
----
-
 #### Logic
 1. Check that `admin.key() == config.admin`
 2. Set `config.status = Paused`
 
----
-
 #### Emits / Side Effects
 - Updates `Config.status` to `Paused`
 - Halts critical user actions (create round, place bet)
-
----
 
 #### Errors
 | Code             | Meaning                                            |
@@ -968,7 +952,10 @@ After unpausing, normal operations (creating rounds, placing bets) can continue.
 | Field       | Type                | Description                                          |
 |-------------|---------------------|---------------------------------------------------------|
 | `admin`     | `Signer`             | The current admin authorized to unpause the program.     |
-| `config`    | `Account<Config>` (PDA)    | The global configuration account.                         |
+| `config`    | `Account<Config>` (PDA)    | The global configuration                |
+
+#### Remaining Accounts
+_None_account.          
 
 #### Arguments
 _None_
@@ -1001,6 +988,9 @@ Immediately halt critical user operations (e.g., placing/withdrawing bets) due t
 | `admin`     | `Signer`             | The current admin authorized to trigger emergency pause. |
 | `config`    | `Account<Config>` (PDA)    | Global configuration account.                  |
 
+#### Remaining Accounts
+_None_
+
 #### Arguments
 _None_
 
@@ -1031,6 +1021,9 @@ Exit emergency mode and restore normal operations by setting the status back to 
 |-------------|---------------------|---------------------------------------------------|
 | `admin`     | `Signer`             | The current admin authorized to clear emergency pause. |
 | `config`    | `Account<Config>` (PDA)    | Global configuration account.                  |
+
+#### Remaining Accounts
+_None_
 
 #### Arguments
 _None_
@@ -1063,6 +1056,9 @@ Adds a new `GroupAsset` to a round. Used for Group Battle mode.
 | `group_asset` | `Account<GroupAsset>` (PDA, init) | New group asset |
 | `system_program` | `Program<System>` | System program |
 
+#### Remaining Accounts
+_None_
+
 #### Arguments
 | Name | Type | Description |
 |------|------|-------------|
@@ -1092,6 +1088,9 @@ Adds a new `Asset` under a `GroupAsset`.
 | `asset` | `Account<Asset>` (PDA, init) | New asset |
 | `feed_price_account` | `AccountInfo` | Pyth price account for this asset |
 | `system_program` | `Program<System>` | System program |
+
+#### Remaining Accounts
+_None_
 
 #### Arguments
 | Name | Type | Description |
@@ -1126,6 +1125,9 @@ Users can only place bets while the round is in Active status.
 | `mint` | `Account<Mint>` | Token mint used for betting |
 | `system_program` | `Program<System>` | Solana's built-in system program. |
 | `token_program` | `Program<Token>` | Solana's SPL Token program. |
+
+#### Remaining Accounts
+_None_
 
 #### Arguments
 | Name               | Type         | Description                                  |
@@ -1184,8 +1186,9 @@ Allows the Admin to cancel a round that has not been fully settled yet. All user
 | `token_program` | `Program<Token>` | SPL Token program |
 | `system_program` | `Program<System>` | System program |
 
-Additional remaining accounts:
-- For each bet to be refunded in this call: the `Bet` PDA (writable) and the bettor’s token account (ATA, writable). Perform this in batches to respect CU and account limits.
+#### Remaining Accounts
+- First account: `bettor_token_accuont` (ATA, writable) — the bettor GRT token account.
+- Next N accounts: `Bet` PDAs (writable) — batched bets to settle in this call.
 
 #### Arguments
 _None_
@@ -1241,8 +1244,8 @@ For single-asset games, this instruction also fetches the starting price directl
 | `round` | `Account<Round>` (PDA, mut) | The currently `Scheduled` round. |
 | `system_program` | `Program<System>` | Program sistem. |
 
-Remaining accounts (for Single-Asset only):
-- `price_oracle_account` (readonly) — the price oracle account (e.g., Pyth price account) that will be read to obtain the start price.
+#### Remaining Accounts
+- `price_oracle_account` (readonly) — the oracle (e.g., Pyth) used to fetch the final price.
 
 #### Arguments
 _None_
@@ -1296,6 +1299,9 @@ Settle a Single-Asset round after `end_time` by using the final price, marking b
 | `associated_token_program` | `Program<AssociatedToken>` | For creating treasury ATA if needed. |
 | `system_program` | `Program<System>` | System program. |
 
+#### Remaining Accounts
+_None_
+
 #### Arguments
 _None_
 
@@ -1313,7 +1319,7 @@ _None_
 2. Set `round.final_price`.
 3. Compute `price_change = final_price - start_price`.
    - For each `Bet` PDA in remaining accounts: determine Won/Lost/Draw via `is_bet_winner`, accumulate `winners_weight`, serialize back.
-   - Compute `fee_amount` from `fee_gold_price_bps` (Single-Asset), transfer from `round_vault` to treasury ATA.
+   - Compute `fee_amount` from `fee_single_asset_bps` (Single-Asset), transfer from `round_vault` to treasury ATA.
    - Update round fields: `winners_weight`, `total_fee_collected`, `final_price`, and status to `Ended` when all bets are processed; otherwise mark `PendingSettlement`.
 
 #### Emits / Side Effects
@@ -1338,7 +1344,9 @@ Batch-captures start prices for multiple assets via remaining accounts.
 | `group_asset` | `Account<GroupAsset>` (PDA, mut) | Group to capture |
 | `system_program` | `Program<System>` | System program |
 
-Remaining accounts: repeated pairs `[asset_pda (w), pyth_price_account (r)]`.
+#### Remaining Accounts
+- First account: `asset` (writeable) - the assets for the group asset in context.
+- Next N account: `price_feed_account` (readonly) — teh pyth price account for asset on first account used to fetch the final price.
 
 #### Arguments
 _None_
@@ -1382,7 +1390,8 @@ Aggregates asset-level results into `GroupAsset`.
 | `group_asset` | `Account<GroupAsset>` (PDA, mut) | Group to finalize |
 | `system_program` | `Program<System>` | System program |
 
-Remaining accounts: all `Asset` PDAs of the group (readonly, batched if needed).
+#### Remaining Accounts
+- `asset` (writeable) - the assets in the group asset in context.
 
 #### Logic
 1. Iterate assets with `final_price` and `growth_rate_bps` set.
@@ -1402,7 +1411,8 @@ Determines `winner_group_ids` for the round.
 | `config` | `Account<Config>` | Global configuration |
 | `round` | `Account<Round>` (PDA, mut) | Target round |
 
-Remaining accounts: all `GroupAsset` PDAs for the round (readonly, batched if needed).
+#### Remaining Accounts
+- `group_asset` (readonly) — the group asset in the round.
 
 #### Logic
 1. Read `avg_growth_rate_bps` of each group and determine max value.
@@ -1433,6 +1443,9 @@ Prerequisites (executed before calling this instruction):
 | `associated_token_program` | `Program<AssociatedToken>` | For creating treasury ATA if needed. |
 | `system_program` | `Program<System>` | System program. |
 
+#### Remaining Accounts
+_None_
+
 #### Arguments
 _None_
 
@@ -1449,7 +1462,7 @@ _None_
 1. For each `Bet` PDA in remaining accounts:
    - A bet wins if `bet.group` ∈ `winner_group_ids`. Direction logic uses group’s `avg_growth_rate_bps` sign.
    - Accumulate `winners_weight`, serialize back.
-2. Compute `fee_amount` from `fee_stock_price_bps` (Group-Battle), transfer from `round_vault` to treasury ATA.
+2. Compute `fee_amount` from `fee_group_battle_bps` (Group-Battle), transfer from `round_vault` to treasury ATA.
 3. Update round fields: `winners_weight`, `total_fee_collected`. Set `status = Ended` when all bets processed; otherwise `PendingSettlement`.
 
 #### Emits / Side Effects
@@ -1481,6 +1494,9 @@ Bets placed are stored in the Round Vault and can be canceled before the `end_ti
 | `bet` | `Account<Bet>` (PDA) | The bet account to be initialized. Only one bet can be placed per round. |
 | `round_vault` | `AccountInfo` (PDA) | The vault account holding bets for this round. |
 | `bettor_token_account` | `Account<TokenAccount>` | The token account of the bettor to transfer GRT from. |
+
+#### Remaining Accounts
+_None_
 
 #### Arguments
 | Name         | Type      | Description                                      |
@@ -1541,6 +1557,9 @@ This instruction allows the User to **cancel/withdraw their bet** (`withdraw_bet
 | `round_vault` | `AccountInfo` (PDA) | The vault account holding bets for this round. |
 | `bettor_token_account` | `Account<TokenAccount>` | The token account of the bettor to transfer GRT from. |
 
+#### Remaining Accounts
+_None_
+
 #### Arguments
 _None_
 
@@ -1590,6 +1609,9 @@ This instruction allows the User to claim their reward (`claim_reward`) if their
 | `mint` | `Account<Mint>` | Mint token used for betting. |
 | `token_program` | `Program<Token>` | SPL Token program. |
 | `system_program` | `Program<System>` | System program. |
+
+#### Remaining Accounts
+_None_
 
 #### Arguments
 _None_

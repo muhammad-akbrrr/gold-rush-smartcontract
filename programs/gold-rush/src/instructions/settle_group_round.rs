@@ -1,4 +1,4 @@
-use crate::{constants::*, error::GoldRushError, state::*, utils::*};
+use crate::{constants::*, error::GoldRushError, state::*};
 use anchor_lang::prelude::*;
 use anchor_lang::AccountDeserialize;
 use anchor_spl::{
@@ -7,7 +7,7 @@ use anchor_spl::{
 };
 
 #[derive(Accounts)]
-pub struct SettleRound<'info> {
+pub struct SettleGroupRound<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
 
@@ -49,7 +49,7 @@ pub struct SettleRound<'info> {
     pub system_program: Program<'info, System>,
 }
 
-impl<'info> SettleRound<'info> {
+impl<'info> SettleGroupRound<'info> {
     pub fn validate(&self) -> Result<()> {
         require!(
             self.config.status == ContractStatus::Active,
@@ -67,6 +67,11 @@ impl<'info> SettleRound<'info> {
         );
 
         require!(
+            matches!(self.round.market_type, MarketType::GroupBattle),
+            GoldRushError::InvalidRoundStatus
+        );
+
+        require!(
             matches!(
                 self.round.status,
                 RoundStatus::Active | RoundStatus::PendingSettlement
@@ -79,51 +84,32 @@ impl<'info> SettleRound<'info> {
             GoldRushError::RoundNotReadyForSettlement
         );
 
+        require!(
+            !self.round.winner_group_ids.is_empty(),
+            GoldRushError::SettlementFailed
+        );
+
         Ok(())
     }
 }
 
-pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
-    // validate
+pub fn handler(ctx: Context<SettleGroupRound>) -> Result<()> {
+    // validate base constraints
     ctx.accounts.validate()?;
 
     let config = &ctx.accounts.config;
     let round = &mut ctx.accounts.round;
 
-    // Prefer already-set final price if available; otherwise use provided asset_price
-    let effective_price = round.final_price.unwrap_or(asset_price);
-
-    // validate remaining accounts
-    require!(
-        ctx.remaining_accounts.len() <= MAX_REMAINING_ACCOUNTS,
-        GoldRushError::InvalidRemainingAccountsLength
-    );
-
-    // if no bets at all, end round immediately
+    // If no bets, end quickly
     if round.total_bets == 0 {
         round.status = RoundStatus::Ended;
-        if effective_price > 0 {
-            round.final_price = Some(effective_price);
-        }
         round.settled_at = Some(Clock::get()?.unix_timestamp);
         return Ok(());
     }
 
-    // if effective price is 0, set round to pending settlement and return
-    if effective_price == 0 {
-        if round.status == RoundStatus::Active {
-            round.status = RoundStatus::PendingSettlement;
-        }
-
-        return Ok(());
-    }
-
-    // If first batch, compute and lock fee and reward pool once
+    // If first batch, compute and lock fee and reward pool once (GroupBattle fee)
     if round.total_reward_pool == 0 && round.total_fee_collected == 0 {
-        let fee_bps = match round.market_type {
-            MarketType::SingleAsset => config.fee_single_asset_bps,
-            MarketType::GroupBattle => config.fee_group_battle_bps,
-        };
+        let fee_bps = config.fee_group_battle_bps;
         let fee_amount = round
             .total_pool
             .checked_mul(fee_bps as u64)
@@ -135,7 +121,7 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
             .checked_sub(fee_amount)
             .ok_or(GoldRushError::Underflow)?;
 
-        // transfer fee
+        // Transfer fee to treasury
         if fee_amount > 0 {
             let transfer_accounts = Transfer {
                 from: ctx.accounts.round_vault.to_account_info(),
@@ -159,30 +145,22 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
         }
     }
 
+    // Iterate over Bet PDAs in remaining accounts (batched)
     let mut batch_winners_weight = 0u64;
-
-    // calculate price changed
-    let start_price = round.start_price.unwrap();
-    let price_change: i64 = (effective_price as i64)
-        .checked_sub(start_price as i64)
-        .ok_or(GoldRushError::Overflow)?;
-
     for acc_info in ctx.remaining_accounts.iter() {
-        // 1) ownership check
+        // Ownership must be our program (Bet PDA)
         require_keys_eq!(
             *acc_info.owner,
             *ctx.program_id,
             GoldRushError::InvalidBetAccount
         );
 
-        // 2) borrow mut data
+        // Borrow and deserialize Bet
         let mut data = acc_info.try_borrow_mut_data()?;
-
-        // 3) deserialize
         let mut bet: Bet = Bet::try_deserialize(&mut &data[..])
             .map_err(|_| GoldRushError::InvalidBetAccountData)?;
 
-        // 4) validate expected PDA
+        // Validate expected Bet PDA
         let expected_pda = Pubkey::find_program_address(
             &[
                 BET_SEED.as_bytes(),
@@ -198,24 +176,33 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
             GoldRushError::InvalidBetAccount
         );
 
-        // 5) decide win/loss/draw
-        let is_winner = is_bet_winner(bet.direction.clone(), price_change);
-        match is_winner {
-            None => {
-                bet.status = BetStatus::Draw;
-            }
-            Some(true) => {
-                bet.status = BetStatus::Won;
-                batch_winners_weight = batch_winners_weight
-                    .checked_add(bet.weight)
-                    .ok_or(GoldRushError::Overflow)?;
-            }
-            Some(false) => {
-                bet.status = BetStatus::Lost;
-            }
+        // Decide result based on group winners. In GroupBattle, a bet wins
+        // if the bet.group PDA corresponds to any winner_group_ids.
+        // winner_group_ids stores numeric group IDs; reconstruct expected GroupAsset PDA
+        // and compare with bet.group.
+        let is_winner = round.winner_group_ids.iter().any(|gid| {
+            let expected_group_pda = Pubkey::find_program_address(
+                &[
+                    GROUP_ASSET_SEED.as_bytes(),
+                    round.key().as_ref(),
+                    &gid.to_le_bytes(),
+                ],
+                ctx.program_id,
+            )
+            .0;
+            expected_group_pda == bet.group
+        });
+
+        if is_winner {
+            bet.status = BetStatus::Won;
+            batch_winners_weight = batch_winners_weight
+                .checked_add(bet.weight)
+                .ok_or(GoldRushError::Overflow)?;
+        } else {
+            bet.status = BetStatus::Lost;
         }
 
-        // 6) serialize back
+        // Serialize back
         let serialized = bet
             .try_to_vec()
             .map_err(|_| GoldRushError::SerializeError)?;
@@ -225,7 +212,7 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
         data[8..8 + serialized.len()].copy_from_slice(&serialized);
     }
 
-    // accumulate progress
+    // Accumulate progress
     round.winners_weight = round
         .winners_weight
         .checked_add(batch_winners_weight)
@@ -235,13 +222,11 @@ pub fn handler(ctx: Context<SettleRound>, asset_price: u64) -> Result<()> {
         .checked_add(ctx.remaining_accounts.len() as u64)
         .ok_or(GoldRushError::Overflow)?;
 
-    // finalize only when all bets processed
+    // Finalize when all bets processed
     if round.settled_bets >= round.total_bets {
         round.status = RoundStatus::Ended;
-        round.final_price = Some(effective_price);
         round.settled_at = Some(Clock::get()?.unix_timestamp);
     } else if round.status == RoundStatus::Active {
-        // mark as pending to indicate partial settlement in progress
         round.status = RoundStatus::PendingSettlement;
     }
 

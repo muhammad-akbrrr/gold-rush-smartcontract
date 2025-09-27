@@ -22,8 +22,8 @@ impl<'info> Initialize<'info> {
     pub fn validate(
         &self,
         keeper_authorities: &Vec<Pubkey>,
-        fee_gold_price_bps: u16,
-        fee_stock_price_bps: u16,
+        fee_single_asset_bps: u16,
+        fee_group_battle_bps: u16,
         min_bet_amount: u64,
         min_time_factor_bps: u16,
         max_time_factor_bps: u16,
@@ -40,12 +40,12 @@ impl<'info> Initialize<'info> {
         );
 
         require!(
-            fee_gold_price_bps <= HUNDRED_PERCENT_BPS,
+            fee_single_asset_bps <= HUNDRED_PERCENT_BPS,
             GoldRushError::InvalidFee
         );
 
         require!(
-            fee_stock_price_bps <= HUNDRED_PERCENT_BPS,
+            fee_group_battle_bps <= HUNDRED_PERCENT_BPS,
             GoldRushError::InvalidFee
         );
 
@@ -80,8 +80,8 @@ pub fn handler(
     keeper_authorities: Vec<Pubkey>,
     token_mint: Pubkey,
     treasury: Pubkey,
-    fee_gold_price_bps: u16,
-    fee_stock_price_bps: u16,
+    fee_single_asset_bps: u16,
+    fee_group_battle_bps: u16,
     min_bet_amount: u64,
     min_time_factor_bps: u16,
     max_time_factor_bps: u16,
@@ -90,8 +90,8 @@ pub fn handler(
     // validate
     ctx.accounts.validate(
         &keeper_authorities,
-        fee_gold_price_bps,
-        fee_stock_price_bps,
+        fee_single_asset_bps,
+        fee_group_battle_bps,
         min_bet_amount,
         min_time_factor_bps,
         max_time_factor_bps,
@@ -105,8 +105,8 @@ pub fn handler(
     config.keeper_authorities = keeper_authorities;
     config.token_mint = token_mint;
     config.treasury = treasury;
-    config.fee_gold_price_bps = fee_gold_price_bps;
-    config.fee_stock_price_bps = fee_stock_price_bps;
+    config.fee_single_asset_bps = fee_single_asset_bps;
+    config.fee_group_battle_bps = fee_group_battle_bps;
     config.min_bet_amount = min_bet_amount;
     config.min_time_factor_bps = min_time_factor_bps;
     config.max_time_factor_bps = max_time_factor_bps;

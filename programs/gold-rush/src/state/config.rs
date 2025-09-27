@@ -14,8 +14,8 @@ pub struct Config {
     pub treasury: Pubkey,   // The address where the fees are sent.
 
     // --- Fee Config ---
-    pub fee_gold_price_bps: u16, // The fee percentage charged on bets based on Gold Price.
-    pub fee_stock_price_bps: u16, // The fee percentage charged on bets based on stock price.
+    pub fee_single_asset_bps: u16, // The fee percentage charged on bets based on Single Asset.
+    pub fee_group_battle_bps: u16, // The fee percentage charged on bets based on Group Battle.
 
     // --- Betting Rules ---
     pub min_bet_amount: u64, // The minimum bet amount.

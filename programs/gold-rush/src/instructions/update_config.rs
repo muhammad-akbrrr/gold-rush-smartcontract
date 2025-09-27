@@ -21,8 +21,8 @@ impl<'info> UpdateConfig<'info> {
         new_keeper_authorities: &Option<Vec<Pubkey>>,
         new_token_mint: Option<Pubkey>,
         new_treasury: Option<Pubkey>,
-        new_fee_gold_price_bps: Option<u16>,
-        new_fee_stock_price_bps: Option<u16>,
+        new_fee_single_asset_bps: Option<u16>,
+        new_fee_group_battle_bps: Option<u16>,
         new_min_bet_amount: Option<u64>,
     ) -> Result<()> {
         require!(
@@ -63,16 +63,16 @@ impl<'info> UpdateConfig<'info> {
             );
         }
 
-        if let Some(new_fee_gold_price_bps) = new_fee_gold_price_bps {
+        if let Some(new_fee_single_asset_bps) = new_fee_single_asset_bps {
             require!(
-                new_fee_gold_price_bps < HUNDRED_PERCENT_BPS,
+                new_fee_single_asset_bps < HUNDRED_PERCENT_BPS,
                 GoldRushError::InvalidNewFeeGoldPriceBps
             );
         }
 
-        if let Some(new_fee_stock_price_bps) = new_fee_stock_price_bps {
+        if let Some(new_fee_group_battle_bps) = new_fee_group_battle_bps {
             require!(
-                new_fee_stock_price_bps < HUNDRED_PERCENT_BPS,
+                new_fee_group_battle_bps < HUNDRED_PERCENT_BPS,
                 GoldRushError::InvalidNewFeeStockPriceBps
             );
         }
@@ -94,8 +94,8 @@ pub fn handler(
     new_keeper_authorities: Option<Vec<Pubkey>>,
     new_token_mint: Option<Pubkey>,
     new_treasury: Option<Pubkey>,
-    new_fee_gold_price_bps: Option<u16>,
-    new_fee_stock_price_bps: Option<u16>,
+    new_fee_single_asset_bps: Option<u16>,
+    new_fee_group_battle_bps: Option<u16>,
     new_min_bet_amount: Option<u64>,
 ) -> Result<()> {
     // validate
@@ -104,8 +104,8 @@ pub fn handler(
         &new_keeper_authorities,
         new_token_mint,
         new_treasury,
-        new_fee_gold_price_bps,
-        new_fee_stock_price_bps,
+        new_fee_single_asset_bps,
+        new_fee_group_battle_bps,
         new_min_bet_amount,
     )?;
 
@@ -124,11 +124,11 @@ pub fn handler(
     if let Some(new_treasury) = new_treasury {
         config.treasury = new_treasury;
     }
-    if let Some(new_fee_gold_price_bps) = new_fee_gold_price_bps {
-        config.fee_gold_price_bps = new_fee_gold_price_bps;
+    if let Some(new_fee_single_asset_bps) = new_fee_single_asset_bps {
+        config.fee_single_asset_bps = new_fee_single_asset_bps;
     }
-    if let Some(new_fee_stock_price_bps) = new_fee_stock_price_bps {
-        config.fee_stock_price_bps = new_fee_stock_price_bps;
+    if let Some(new_fee_group_battle_bps) = new_fee_group_battle_bps {
+        config.fee_group_battle_bps = new_fee_group_battle_bps;
     }
     if let Some(new_min_bet_amount) = new_min_bet_amount {
         config.min_bet_amount = new_min_bet_amount;

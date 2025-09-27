@@ -123,8 +123,8 @@ pub fn handler(ctx: Context<SettleSingleRound>) -> Result<()> {
 
     // If first batch, compute and lock fee and reward pool once
     if round.total_reward_pool == 0 && round.total_fee_collected == 0 {
-        // For Single-Asset rounds, use fee_gold_price_bps
-        let fee_bps = config.fee_gold_price_bps;
+        // For Single-Asset rounds, use fee_single_asset_bps
+        let fee_bps = config.fee_single_asset_bps;
         let fee_amount = round
             .total_pool
             .checked_mul(fee_bps as u64)

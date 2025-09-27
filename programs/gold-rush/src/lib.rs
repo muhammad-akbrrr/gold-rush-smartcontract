@@ -24,8 +24,8 @@ pub mod gold_rush {
         keeper_authorities: Vec<Pubkey>,
         token_mint: Pubkey,
         treasury: Pubkey,
-        fee_gold_price_bps: u16,
-        fee_stock_price_bps: u16,
+        fee_single_asset_bps: u16,
+        fee_group_battle_bps: u16,
         min_bet_amount: u64,
         min_time_factor_bps: u16,
         max_time_factor_bps: u16,
@@ -36,8 +36,8 @@ pub mod gold_rush {
             keeper_authorities,
             token_mint,
             treasury,
-            fee_gold_price_bps,
-            fee_stock_price_bps,
+            fee_single_asset_bps,
+            fee_group_battle_bps,
             min_bet_amount,
             min_time_factor_bps,
             max_time_factor_bps,
@@ -51,8 +51,8 @@ pub mod gold_rush {
         new_keeper_authorities: Option<Vec<Pubkey>>,
         new_token_mint: Option<Pubkey>,
         new_treasury: Option<Pubkey>,
-        new_fee_gold_price_bps: Option<u16>,
-        new_fee_stock_price_bps: Option<u16>,
+        new_fee_single_asset_bps: Option<u16>,
+        new_fee_group_battle_bps: Option<u16>,
         new_min_bet_amount: Option<u64>,
     ) -> Result<()> {
         update_config::handler(
@@ -61,8 +61,8 @@ pub mod gold_rush {
             new_keeper_authorities,
             new_token_mint,
             new_treasury,
-            new_fee_gold_price_bps,
-            new_fee_stock_price_bps,
+            new_fee_single_asset_bps,
+            new_fee_group_battle_bps,
             new_min_bet_amount,
         )
     }
@@ -122,5 +122,9 @@ pub mod gold_rush {
 
     pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
         claim_reward::handler(ctx)
+    }
+
+    pub fn settle_group_round(ctx: Context<SettleGroupRound>) -> Result<()> {
+        settle_group_round::handler(ctx)
     }
 }
