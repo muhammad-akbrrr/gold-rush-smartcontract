@@ -71,23 +71,27 @@ describe("createRound", () => {
     )[0];
     const vaultPda = deriveVaultPda(program.programId, roundPda);
 
-    await program.methods
-      .createRound(
-        { groupBattle: {} },
-        new anchor.BN(start),
-        new anchor.BN(end)
-      )
-      .accounts({
-        signer: admin.publicKey,
-        config: configPda,
-        round: roundPda,
-        vault: vaultPda,
-        mint: tokenMint,
-        systemProgram: SystemProgram.programId,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      } as any)
-      .signers([admin])
-      .rpc();
+    try {
+      await program.methods
+        .createRound(
+          { groupBattle: {} },
+          new anchor.BN(start),
+          new anchor.BN(end)
+        )
+        .accounts({
+          signer: admin.publicKey,
+          config: configPda,
+          round: roundPda,
+          vault: vaultPda,
+          mint: tokenMint,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        } as any)
+        .signers([admin])
+        .rpc();
+    } catch (e: any) {
+      throw e;
+    }
 
     const round = await program.account.round.fetch(roundPda);
     expect(round.id.toString()).to.eq(nextId.toString());
@@ -96,7 +100,86 @@ describe("createRound", () => {
     expect(round.vault.toString()).to.eq(vaultPda.toString());
   });
 
-  it("single asset happy path");
+  it("single asset happy path", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const start = now + 3;
+    const end = start + 15;
 
-  it("fails invalid timestamps");
+    const cfg = await program.account.config.fetch(configPda);
+    const nextId = cfg.currentRoundCounter.addn(1);
+    const roundPda = PublicKey.findProgramAddressSync(
+      [Buffer.from("round"), nextId.toArrayLike(Buffer, "le", 8)],
+      program.programId
+    )[0];
+    const vaultPda = deriveVaultPda(program.programId, roundPda);
+
+    try {
+      await program.methods
+        .createRound(
+          { singleAsset: {} },
+          new anchor.BN(start),
+          new anchor.BN(end)
+        )
+        .accounts({
+          signer: admin.publicKey,
+          config: configPda,
+          round: roundPda,
+          vault: vaultPda,
+          mint: tokenMint,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        } as any)
+        .signers([admin])
+        .rpc();
+    } catch (e: any) {
+      throw e;
+    }
+
+    const round = await program.account.round.fetch(roundPda);
+    expect(round.id.toString()).to.eq(nextId.toString());
+    expect(round.marketType).to.deep.equal({ singleAsset: {} });
+    expect(round.status).to.deep.equal({ scheduled: {} });
+    expect(round.vault.toString()).to.eq(vaultPda.toString());
+  });
+
+  it("fails invalid timestamps", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const start = now - 3;
+    const end = start + 15;
+
+    const cfg = await program.account.config.fetch(configPda);
+    const nextId = cfg.currentRoundCounter.addn(1);
+    const roundPda = PublicKey.findProgramAddressSync(
+      [Buffer.from("round"), nextId.toArrayLike(Buffer, "le", 8)],
+      program.programId
+    )[0];
+    const vaultPda = deriveVaultPda(program.programId, roundPda);
+
+    try {
+      await program.methods
+        .createRound(
+          { groupBattle: {} },
+          new anchor.BN(start),
+          new anchor.BN(end)
+        )
+        .accounts({
+          signer: admin.publicKey,
+          config: configPda,
+          round: roundPda,
+          vault: vaultPda,
+          mint: tokenMint,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        } as any)
+        .signers([admin])
+        .rpc();
+
+      throw new Error("should fail");
+    } catch (e: any) {
+      const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
+      if (parsed) {
+        expect(parsed.error.errorCode.code).to.eq("InvalidTimestamps");
+      }
+    }
+  });
 });

@@ -8,6 +8,7 @@ pub struct CreateRound<'info> {
     pub signer: Signer<'info>,
 
     #[account(
+        mut,
         seeds = [CONFIG_SEED.as_bytes()],
         bump
     )]
