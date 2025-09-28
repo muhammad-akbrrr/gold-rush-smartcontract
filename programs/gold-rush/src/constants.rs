@@ -74,3 +74,7 @@ pub const ASSET_PRICE_STALENESS_THRESHOLD_SECONDS: i64 = 60;
 
 /// Price
 pub const ASSET_PRICE_DECIMALS: i32 = 6;
+
+/// Pyth feed id (hex)
+pub const PYTH_GOLD_PRICE_FEED_ID_HEX: &str =
+    "0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d"; // TODO: change to gold price feed id

@@ -1,5 +1,6 @@
 use crate::{constants::*, error::GoldRushError, state::*, utils::*};
 use anchor_lang::prelude::*;
+use pyth_solana_receiver_sdk::price_update::{get_feed_id_from_hex, PriceUpdateV2};
 
 #[derive(Accounts)]
 pub struct StartRound<'info> {
@@ -48,7 +49,7 @@ impl<'info> StartRound<'info> {
     }
 }
 
-pub fn handler(ctx: Context<StartRound>) -> Result<()> {
+pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, StartRound<'info>>) -> Result<()> {
     // validate
     ctx.accounts.validate()?;
 
@@ -62,15 +63,23 @@ pub fn handler(ctx: Context<StartRound>) -> Result<()> {
             GoldRushError::InvalidRemainingAccountsLength
         );
 
-        let price_ai = &ctx.remaining_accounts[0];
-        let now = Clock::get()?.unix_timestamp;
-        let price =
-            load_pyth_price_normalized(price_ai, now, ASSET_PRICE_STALENESS_THRESHOLD_SECONDS)?;
+        let price_update: Account<PriceUpdateV2> = Account::try_from(&ctx.remaining_accounts[0])
+            .map_err(|_| GoldRushError::InvalidPriceUpdateAccountData)?;
+        let feed_id = get_feed_id_from_hex(PYTH_GOLD_PRICE_FEED_ID_HEX)
+            .map_err(|_| GoldRushError::PythError)?;
+        let price = price_update
+            .get_price_no_older_than(
+                &Clock::get()?,
+                ASSET_PRICE_STALENESS_THRESHOLD_SECONDS as u64,
+                &feed_id,
+            )
+            .map_err(|_| GoldRushError::PythError)?;
 
-        require!(price > 0, GoldRushError::InvalidAssetPrice);
+        let normalized = normalize_price_to_u64(price.price, price.exponent)?;
+        require!(normalized > 0, GoldRushError::InvalidAssetPrice);
 
         // set start price for single-asset
-        round.start_price = Some(price);
+        round.start_price = Some(normalized);
     }
 
     // activate round

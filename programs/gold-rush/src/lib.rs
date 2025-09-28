@@ -112,7 +112,7 @@ pub mod gold_rush {
         capture_start_price::handler(ctx)
     }
 
-    pub fn start_round(ctx: Context<StartRound>) -> Result<()> {
+    pub fn start_round<'info>(ctx: Context<'_, '_, 'info, 'info, StartRound<'info>>) -> Result<()> {
         start_round::handler(ctx)
     }
 

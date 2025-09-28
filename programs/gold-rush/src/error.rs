@@ -18,6 +18,9 @@ pub enum GoldRushError {
     #[msg("Invalid remaining accounts length")]
     InvalidRemainingAccountsLength = 0x1004,
 
+    #[msg("Invalid price update account data")]
+    InvalidPriceUpdateAccountData = 0x1005,
+
     // Configuration Errors (0x2000 - 0x2999)
     #[msg("Fee basis points must be less than 10000")]
     InvalidFee = 0x2000,
