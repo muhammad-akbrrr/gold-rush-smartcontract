@@ -1,5 +1,6 @@
 use crate::{constants::*, error::GoldRushError, state::*};
 use anchor_lang::prelude::*;
+use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 
 #[derive(Accounts)]
 pub struct InsertAsset<'info> {
@@ -35,7 +36,7 @@ pub struct InsertAsset<'info> {
     pub asset: Account<'info, Asset>,
 
     /// CHECK: This is the price feed account
-    pub feed_price_account: AccountInfo<'info>,
+    pub feed_price_account: Account<'info, PriceUpdateV2>,
 
     pub system_program: Program<'info, System>,
 }

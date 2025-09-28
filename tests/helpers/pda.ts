@@ -37,6 +37,21 @@ export function deriveGroupAssetPda(
   )[0];
 }
 
+export function deriveAssetPda(
+  programId: PublicKey,
+  groupAsset: PublicKey,
+  id: anchor.BN
+) {
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from("asset"),
+      groupAsset.toBuffer(),
+      id.toArrayLike(Buffer, "le", 8),
+    ],
+    programId
+  )[0];
+}
+
 export function deriveBetPda(
   programId: PublicKey,
   round: PublicKey,
