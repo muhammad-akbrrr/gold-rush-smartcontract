@@ -13,7 +13,7 @@ export function getProviderAndProgram() {
 export async function airdropMany(
   connection: Connection,
   pubs: PublicKey[],
-  lamports: number
+  lamports: number = 100_000_000_000
 ) {
   await Promise.all(
     pubs.map(async (pk) =>
