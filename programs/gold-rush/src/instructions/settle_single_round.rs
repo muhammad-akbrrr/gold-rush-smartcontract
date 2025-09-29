@@ -67,7 +67,6 @@ impl<'info> SettleSingleRound<'info> {
             GoldRushError::InvalidTreasuryAuthority
         );
 
-        // must be a SingleAsset round
         require!(
             matches!(self.round.market_type, MarketType::SingleAsset),
             GoldRushError::InvalidRoundStatus

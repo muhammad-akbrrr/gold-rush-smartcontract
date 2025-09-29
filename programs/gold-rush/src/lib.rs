@@ -124,6 +124,18 @@ pub mod gold_rush {
         withdraw_bet::handler(ctx)
     }
 
+    pub fn capture_end_price(ctx: Context<CaptureEndPrice>) -> Result<()> {
+        capture_end_price::handler(ctx)
+    }
+
+    pub fn finalize_group_asset(ctx: Context<FinalizeGroupAsset>) -> Result<()> {
+        finalize_group_asset::handler(ctx)
+    }
+
+    pub fn finalize_groups(ctx: Context<FinalizeGroups>) -> Result<()> {
+        finalize_groups::handler(ctx)
+    }
+
     pub fn settle_single_round<'info>(
         ctx: Context<'_, '_, 'info, 'info, SettleSingleRound<'info>>,
     ) -> Result<()> {

@@ -40,6 +40,15 @@ impl<'info> CaptureEndPrice<'info> {
             GoldRushError::ProgramPaused
         );
 
+        require!(
+            matches!(self.round.market_type, MarketType::GroupBattle),
+            GoldRushError::InvalidRoundStatus
+        );
+        require!(
+            matches!(self.round.status, RoundStatus::Scheduled),
+            GoldRushError::InvalidRoundStatus
+        );
+
         Ok(())
     }
 }

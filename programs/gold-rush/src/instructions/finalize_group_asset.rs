@@ -44,16 +44,15 @@ impl<'info> FinalizeGroupAsset<'info> {
             GoldRushError::UnauthorizedKeeper
         );
 
-        // Round must be GroupBattle and eligible for settlement
-        require!(
-            matches!(self.round.market_type, MarketType::GroupBattle),
-            GoldRushError::InvalidRoundStatus
-        );
         require!(
             matches!(
                 self.round.status,
                 RoundStatus::Active | RoundStatus::PendingSettlement
             ),
+            GoldRushError::InvalidRoundStatus
+        );
+        require!(
+            matches!(self.round.market_type, MarketType::GroupBattle),
             GoldRushError::InvalidRoundStatus
         );
         require!(

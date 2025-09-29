@@ -52,6 +52,15 @@ impl<'info> InsertAsset<'info> {
         );
 
         require!(
+            matches!(self.round.status, RoundStatus::Scheduled),
+            GoldRushError::InvalidRoundStatus
+        );
+        require!(
+            matches!(self.round.market_type, MarketType::GroupBattle),
+            GoldRushError::InvalidRoundStatus
+        );
+
+        require!(
             self.signer.key() == self.config.admin,
             GoldRushError::Unauthorized
         );
