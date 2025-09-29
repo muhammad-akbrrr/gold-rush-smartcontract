@@ -3,7 +3,7 @@ import { SystemProgram, PublicKey, Keypair } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { expect } from "chai";
 import { getProviderAndProgram } from "./helpers/env";
-import { createMintAndAta } from "./helpers/token";
+import { createAta, createMintToken } from "./helpers/token";
 import { deriveConfigPda, deriveVaultPda } from "./helpers/pda";
 
 describe("createRound", () => {
@@ -21,12 +21,8 @@ describe("createRound", () => {
     treasury = Keypair.generate();
     keeper = Keypair.generate();
 
-    const { mint } = await createMintAndAta(
-      provider.connection,
-      admin,
-      admin.publicKey,
-      9
-    );
+    const { mint } = await createMintToken(provider.connection, admin, 9);
+    await createAta(provider.connection, mint, admin);
     tokenMint = mint;
 
     configPda = deriveConfigPda(program.programId);

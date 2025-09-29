@@ -2,7 +2,7 @@ import * as anchor from "@coral-xyz/anchor";
 import { SystemProgram, Keypair, PublicKey } from "@solana/web3.js";
 import { expect } from "chai";
 import { getProviderAndProgram } from "./helpers/env";
-import { createMintAndAta } from "./helpers/token";
+import { createAta, createMintToken } from "./helpers/token";
 import { deriveConfigPda } from "./helpers/pda";
 
 describe("initialize", () => {
@@ -19,13 +19,9 @@ describe("initialize", () => {
     keeper = Keypair.generate();
     treasury = Keypair.generate();
 
-    const { mint } = await createMintAndAta(
-      provider.connection,
-      admin,
-      admin.publicKey,
-      9
-    );
+    const { mint } = await createMintToken(provider.connection, admin, 9);
     tokenMint = mint;
+    await createAta(provider.connection, mint, admin);
     configPda = deriveConfigPda(program.programId);
   });
 

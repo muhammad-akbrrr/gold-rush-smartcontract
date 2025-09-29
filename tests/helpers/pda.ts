@@ -55,16 +55,10 @@ export function deriveAssetPda(
 export function deriveBetPda(
   programId: PublicKey,
   round: PublicKey,
-  id: bigint
+  id: anchor.BN
 ) {
   return PublicKey.findProgramAddressSync(
-    [
-      Buffer.from("bet"),
-      round.toBuffer(),
-      Buffer.from(
-        new Uint8Array(new BigInt64Array([BigInt.asIntN(64, id)]).buffer)
-      ),
-    ],
+    [Buffer.from("bet"), round.toBuffer(), id.toArrayLike(Buffer, "le", 8)],
     programId
   )[0];
 }

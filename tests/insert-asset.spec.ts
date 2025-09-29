@@ -1,7 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import { airdropMany, getProviderAndProgram } from "./helpers/env";
-import { createMintAndAta } from "./helpers/token";
 import {
   deriveAssetPda,
   deriveConfigPda,
@@ -13,6 +12,8 @@ import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { expect } from "chai";
 import { symbolToBytes } from "./helpers/asset";
 import { PythSolanaReceiver } from "@pythnetwork/pyth-solana-receiver";
+import { createAta, createMintToken } from "./helpers/token";
+import { SOL_PRICE_FEED_ID } from "./helpers/pyth";
 
 describe("insertAsset", () => {
   const { provider, program } = getProviderAndProgram();
@@ -45,13 +46,9 @@ describe("insertAsset", () => {
       keeper.publicKey,
     ]);
 
-    const { mint } = await createMintAndAta(
-      provider.connection,
-      admin,
-      admin.publicKey,
-      9
-    );
+    const { mint } = await createMintToken(provider.connection, admin, 9);
     tokenMint = mint;
+    await createAta(provider.connection, mint, admin);
 
     configPda = deriveConfigPda(program.programId);
     await program.methods
@@ -134,8 +131,6 @@ describe("insertAsset", () => {
       nextAssetId
     );
 
-    const SOL_PRICE_FEED_ID =
-      "0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d";
     const priceFeedAccount = pythSolanaReceiver.getPriceFeedAccountAddress(
       0,
       SOL_PRICE_FEED_ID
@@ -172,8 +167,6 @@ describe("insertAsset", () => {
     );
   });
   it("fails max assets reached", async () => {
-    const SOL_PRICE_FEED_ID =
-      "0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d";
     const priceFeedAccount = pythSolanaReceiver.getPriceFeedAccountAddress(
       0,
       SOL_PRICE_FEED_ID

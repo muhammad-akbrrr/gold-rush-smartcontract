@@ -5,10 +5,9 @@ import {
   mintTo,
 } from "@solana/spl-token";
 
-export async function createMintAndAta(
+export async function createMintToken(
   connection: Connection,
   payer: Keypair,
-  owner: PublicKey,
   decimals = 9
 ) {
   const mintAuthority = payer; // reuse
@@ -19,13 +18,20 @@ export async function createMintAndAta(
     null,
     decimals
   );
-  const ata = await createAssociatedTokenAccount(
+  return { mint, mintAuthority };
+}
+
+export async function createAta(
+  connection: Connection,
+  mint: PublicKey,
+  owner: Keypair
+) {
+  return await createAssociatedTokenAccount(
     connection,
-    payer,
+    owner,
     mint,
-    owner
+    owner.publicKey
   );
-  return { mint, ata, mintAuthority };
 }
 
 export async function mintAmount(

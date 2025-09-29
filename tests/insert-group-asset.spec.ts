@@ -1,7 +1,7 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import { airdropMany, getProviderAndProgram } from "./helpers/env";
-import { createMintAndAta } from "./helpers/token";
+import { createAta, createMintToken } from "./helpers/token";
 import {
   deriveConfigPda,
   deriveGroupAssetPda,
@@ -38,12 +38,8 @@ describe("insertGroupAsset", () => {
       user.publicKey,
     ]);
 
-    const { mint } = await createMintAndAta(
-      provider.connection,
-      admin,
-      admin.publicKey,
-      9
-    );
+    const { mint } = await createMintToken(provider.connection, admin, 9);
+    await createAta(provider.connection, mint, admin);
     tokenMint = mint;
 
     configPda = deriveConfigPda(program.programId);
