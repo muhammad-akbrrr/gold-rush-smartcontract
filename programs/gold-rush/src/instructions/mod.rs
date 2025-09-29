@@ -1,11 +1,13 @@
 #![allow(ambiguous_glob_reexports)]
 
 pub mod cancel_round;
+pub mod capture_end_price;
 pub mod capture_start_price;
 pub mod claim_reward;
 pub mod create_round;
 pub mod emergency_pause;
 pub mod emergency_unpause;
+pub mod finalize_group_asset;
 pub mod initialize;
 pub mod insert_asset;
 pub mod insert_group_asset;
@@ -19,11 +21,13 @@ pub mod update_config;
 pub mod withdraw_bet;
 
 pub use cancel_round::*;
+pub use capture_end_price::*;
 pub use capture_start_price::*;
 pub use claim_reward::*;
 pub use create_round::*;
 pub use emergency_pause::*;
 pub use emergency_unpause::*;
+pub use finalize_group_asset::*;
 pub use initialize::*;
 pub use insert_asset::*;
 pub use insert_group_asset::*;

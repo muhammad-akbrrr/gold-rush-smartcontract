@@ -80,7 +80,7 @@ pub fn handler(ctx: Context<InsertAsset>, symbol: [u8; 8]) -> Result<()> {
         .ok_or(GoldRushError::Overflow)?;
     asset.group = group_asset.key();
     asset.round = round.key();
-    asset.price_feed_account = ctx.accounts.feed_price_account.key();
+    asset.feed_id = ctx.accounts.feed_price_account.price_message.feed_id;
     asset.symbol = symbol;
     asset.created_at = Clock::get()?.unix_timestamp;
     asset.bump = ctx.bumps.asset;

@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 
 #[derive(Accounts)]
-pub struct CaptureStartPrice<'info> {
+pub struct CaptureEndPrice<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
 
@@ -30,7 +30,7 @@ pub struct CaptureStartPrice<'info> {
     pub system_program: Program<'info, System>,
 }
 
-impl<'info> CaptureStartPrice<'info> {
+impl<'info> CaptureEndPrice<'info> {
     pub fn validate(&self) -> Result<()> {
         require!(
             matches!(
@@ -44,7 +44,7 @@ impl<'info> CaptureStartPrice<'info> {
     }
 }
 
-pub fn handler(ctx: Context<CaptureStartPrice>) -> Result<()> {
+pub fn handler(ctx: Context<CaptureEndPrice>) -> Result<()> {
     // validate
     ctx.accounts.validate()?;
 
@@ -60,18 +60,18 @@ pub fn handler(ctx: Context<CaptureStartPrice>) -> Result<()> {
         GoldRushError::InvalidRemainingAccountsLength
     );
 
-    let round = &mut ctx.accounts.round;
+    let round = &ctx.accounts.round;
     let group_asset = &mut ctx.accounts.group_asset;
 
-    // if started price is not set, set it to current timestamp
-    if group_asset.start_price_at.is_none() {
-        group_asset.start_price_at = Some(Clock::get()?.unix_timestamp);
+    // if finalized price is not set, set it to current timestamp
+    if group_asset.finalized_price_at.is_none() {
+        group_asset.finalized_price_at = Some(Clock::get()?.unix_timestamp);
     }
-    let start_ts = group_asset
-        .start_price_at
+    let finalized_ts = group_asset
+        .finalized_price_at
         .ok_or(GoldRushError::InvalidAssetPrice)?;
-    let start_price_at = Clock {
-        unix_timestamp: start_ts,
+    let finalized_price_at = Clock {
+        unix_timestamp: finalized_ts,
         ..Clock::get()?
     };
 
@@ -125,20 +125,20 @@ pub fn handler(ctx: Context<CaptureStartPrice>) -> Result<()> {
             GoldRushError::InvalidPriceFeedAccount
         );
 
-        // load normalized price from PriceUpdateV2 (pyth receiver)
+        // load normalized price
         let price = price_update
             .get_price_no_older_than(
-                &start_price_at,
+                &finalized_price_at,
                 ASSET_PRICE_STALENESS_THRESHOLD_SECONDS as u64,
                 &asset.feed_id,
             )
             .map_err(|_| GoldRushError::PythError)?;
         let normalized = normalize_price_to_u64(price.price, price.exponent)?;
 
-        // set asset fields
-        if asset.start_price.is_none() {
+        // set asset final price once
+        if asset.final_price.is_none() {
             require!(normalized > 0, GoldRushError::InvalidAssetPrice);
-            asset.start_price = Some(normalized);
+            asset.final_price = Some(normalized);
 
             // serialize back
             let serialized = asset
@@ -150,7 +150,7 @@ pub fn handler(ctx: Context<CaptureStartPrice>) -> Result<()> {
             asset_data[8..8 + serialized.len()].copy_from_slice(&serialized);
         }
 
-        // serialize
+        // serialize (idempotent)
         let serialized = asset
             .try_to_vec()
             .map_err(|_| GoldRushError::SerializeError)?;

@@ -1376,7 +1376,25 @@ For each pair `(asset, pyth)`:
 Batch-captures end prices and computes per-asset growth.
 
 #### Context
-Same as Capture Start Price, but writing `asset.final_price` and `asset.growth_rate_bps`.
+| Account | Type | Description |
+|--------|------|-------------|
+| `signer` | `Signer` | Authorized keeper |
+| `config` | `Account<Config>` | Global configuration |
+| `round` | `Account<Round>` (PDA, mut) | Target round |
+| `group_asset` | `Account<GroupAsset>` (PDA, mut) | Group to capture |
+| `system_program` | `Program<System>` | System program |
+
+#### Remaining Accounts
+- First account: `asset` (writeable) - the assets for the group asset in context.
+- Next N account: `price_feed_account` (readonly) — teh pyth price account for asset on first account used to fetch the final price.
+
+#### Arguments
+_None_
+
+#### Validations
+- `config.status` in {Active, EmergencyPaused}
+- For each pair: Asset PDA valid for `group_asset` and `round`, and `asset.price_feed_account == pyth_price_account.key()`
+- Pyth price not older than `ASSET_PRICE_STALENESS_THRESHOLD_SECONDS`
 
 #### Logic
 For each pair `(asset, pyth)`:
@@ -1399,7 +1417,11 @@ Aggregates asset-level results into `GroupAsset`.
 | `system_program` | `Program<System>` | System program |
 
 #### Remaining Accounts
-- `asset` (writeable) - the assets in the group asset in context.
+- First account: `asset` (writeable) - the assets for the group asset in context.
+- Next N account: `price_feed_account` (readonly) — teh pyth price account for asset on first account used to fetch the final price.
+
+#### Arguments
+_None_
 
 #### Logic
 1. Iterate assets with `final_price` and `growth_rate_bps` set.
@@ -1421,6 +1443,9 @@ Determines `winner_group_ids` for the round.
 
 #### Remaining Accounts
 - `group_asset` (readonly) — the group asset in the round.
+
+#### Arguments
+_None_
 
 #### Logic
 1. Read `avg_growth_rate_bps` of each group and determine max value.

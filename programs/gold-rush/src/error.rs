@@ -172,6 +172,9 @@ pub enum GoldRushError {
     #[msg("Bet status is Lost, cannot claim reward")]
     ClaimLosingBet = 0x5011,
 
+    #[msg("Group asset has already been finalized")]
+    GroupAssetAlreadyFinalized = 0x5012,
+
     // Account & Token Errors (0x6000 - 0x6999)
     #[msg("Invalid token account")]
     InvalidTokenAccount = 0x6000,
