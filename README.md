@@ -925,8 +925,7 @@ When paused, new rounds cannot be created and bets cannot be placed.
 | `config`    | `Account<Config>` (PDA)    | PDA account to store global configuration data.                  |
 
 #### Remaining Accounts
-- First account: `price_oracle_account` (readonly) — the oracle (e.g., Pyth) used to fetch the final price.
-- Next N accounts: `Bet` PDAs (writable) — batched bets to settle in this call.
+_None_
 
 #### Validations
 - `admin` must be the current admin stored in `config.admin`
@@ -961,7 +960,7 @@ After unpausing, normal operations (creating rounds, placing bets) can continue.
 | `config`    | `Account<Config>` (PDA)    | The global configuration                |
 
 #### Remaining Accounts
-_None_account.          
+_None_          
 
 #### Arguments
 _None_
@@ -1308,7 +1307,8 @@ Settle a Single-Asset round after `end_time` by using the final price, marking b
 | `system_program` | `Program<System>` | System program. |
 
 #### Remaining Accounts
-_None_
+- First account: `price_feed_account` (readonly) — teh pyth price account for asset on first account used to fetch the final price.
+- Next N accounts: `Bet` PDAs (writable) — batched bets to settle in this call.
 
 #### Arguments
 _None_

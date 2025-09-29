@@ -17,7 +17,7 @@ cluster = "localnet"
 wallet = "~/.config/solana/localnet/1.json"
 
 [scripts]
-test = "pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/place-bet-single-round.spec.ts"
+test = "pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/settle-single-round.spec.ts"
 test_init = "pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/initialize.spec.ts"
 test_create_round = "pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/create-round.spec.ts"
 

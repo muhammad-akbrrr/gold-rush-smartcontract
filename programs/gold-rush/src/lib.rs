@@ -124,7 +124,9 @@ pub mod gold_rush {
         withdraw_bet::handler(ctx)
     }
 
-    pub fn settle_single_round(ctx: Context<SettleSingleRound>) -> Result<()> {
+    pub fn settle_single_round<'info>(
+        ctx: Context<'_, '_, 'info, 'info, SettleSingleRound<'info>>,
+    ) -> Result<()> {
         settle_single_round::handler(ctx)
     }
 

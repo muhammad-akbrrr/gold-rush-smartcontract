@@ -5,6 +5,7 @@ use anchor_spl::{
     associated_token::AssociatedToken,
     token::{transfer, Mint, Token, TokenAccount, Transfer},
 };
+use pyth_solana_receiver_sdk::price_update::{get_feed_id_from_hex, PriceUpdateV2};
 
 #[derive(Accounts)]
 pub struct SettleSingleRound<'info> {
@@ -85,7 +86,6 @@ impl<'info> SettleSingleRound<'info> {
             GoldRushError::RoundNotReadyForSettlement
         );
 
-        // start price must exist from start_round
         require!(
             self.round.start_price.is_some(),
             GoldRushError::InvalidAssetPrice
@@ -95,35 +95,65 @@ impl<'info> SettleSingleRound<'info> {
     }
 }
 
-pub fn handler(ctx: Context<SettleSingleRound>) -> Result<()> {
+pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleSingleRound<'info>>) -> Result<()> {
     // validate base constraints
     ctx.accounts.validate()?;
+
+    require!(
+        ctx.remaining_accounts.len() <= MAX_REMAINING_ACCOUNTS,
+        GoldRushError::InvalidRemainingAccountsLength
+    );
 
     let config = &ctx.accounts.config;
     let round = &mut ctx.accounts.round;
 
-    // Read final price from oracle (first remaining account)
-    require!(
-        !ctx.remaining_accounts.is_empty(),
-        GoldRushError::InvalidRemainingAccountsLength
-    );
-    let price_ai = &ctx.remaining_accounts[0];
-    let now = Clock::get()?.unix_timestamp;
-    let final_price =
-        load_pyth_price_normalized(price_ai, now, ASSET_PRICE_STALENESS_THRESHOLD_SECONDS)?;
-    require!(final_price > 0, GoldRushError::InvalidAssetPrice);
+    let now = Clock::get()?;
+
+    // If final price already set, skip reading Pyth. Otherwise, expect the first
+    // remaining account to be the Pyth PriceUpdateV2 account.
+    let (final_price, first_bet_index): (u64, usize) = if round.final_price.is_some() {
+        (round.final_price.unwrap(), 0)
+    } else {
+        require!(
+            !ctx.remaining_accounts.is_empty(),
+            GoldRushError::InvalidRemainingAccountsLength
+        );
+
+        let price_update: Account<PriceUpdateV2> = Account::try_from(&ctx.remaining_accounts[0])
+            .map_err(|_| GoldRushError::InvalidPriceUpdateAccountData)?;
+        let feed_id = get_feed_id_from_hex(PYTH_GOLD_PRICE_FEED_ID_HEX)
+            .map_err(|_| GoldRushError::PythError)?;
+        let price = price_update
+            .get_price_no_older_than(
+                &now,
+                ASSET_PRICE_STALENESS_THRESHOLD_SECONDS as u64,
+                &feed_id,
+            )
+            .map_err(|_| GoldRushError::PythError)?;
+
+        let fp = normalize_price_to_u64(price.price, price.exponent)?;
+        require!(fp > 0, GoldRushError::InvalidAssetPrice);
+        (fp, 1)
+    };
+
+    // If we still have bets to settle, ensure at least one bet account is provided
+    if round.settled_bets < round.total_bets {
+        require!(
+            ctx.remaining_accounts.len() > first_bet_index,
+            GoldRushError::InvalidRemainingAccountsLength
+        );
+    }
 
     // If no bets, end quickly
     if round.total_bets == 0 {
         round.status = RoundStatus::Ended;
         round.final_price = Some(final_price);
-        round.settled_at = Some(now);
+        round.settled_at = Some(Clock::get()?.unix_timestamp);
         return Ok(());
     }
 
     // If first batch, compute and lock fee and reward pool once
     if round.total_reward_pool == 0 && round.total_fee_collected == 0 {
-        // For Single-Asset rounds, use fee_single_asset_bps
         let fee_bps = config.fee_single_asset_bps;
         let fee_amount = round
             .total_pool
@@ -168,7 +198,7 @@ pub fn handler(ctx: Context<SettleSingleRound>) -> Result<()> {
 
     // Iterate over Bet PDAs in remaining accounts (batched)
     let mut batch_winners_weight = 0u64;
-    for acc_info in ctx.remaining_accounts.iter().skip(1) {
+    for acc_info in ctx.remaining_accounts.iter().skip(first_bet_index) {
         // Ownership must be our program (Bet PDA)
         require_keys_eq!(
             *acc_info.owner,
@@ -238,7 +268,7 @@ pub fn handler(ctx: Context<SettleSingleRound>) -> Result<()> {
     if round.settled_bets >= round.total_bets {
         round.status = RoundStatus::Ended;
         round.final_price = Some(final_price);
-        round.settled_at = Some(now);
+        round.settled_at = Some(now.unix_timestamp);
     } else if round.status == RoundStatus::Active {
         // mark as pending to indicate partial settlement in progress
         round.status = RoundStatus::PendingSettlement;
