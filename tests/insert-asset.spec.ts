@@ -10,10 +10,10 @@ import {
 } from "./helpers/pda";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { expect } from "chai";
-import { symbolToBytes } from "./helpers/asset";
+import { hex32ToBytes, stringToBytes } from "./helpers/bytes";
 import { PythSolanaReceiver } from "@pythnetwork/pyth-solana-receiver";
 import { createAta, createMintToken } from "./helpers/token";
-import { SOL_PRICE_FEED_ID } from "./helpers/pyth";
+import { GOLD_PRICE_FEED_ID, SOL_PRICE_FEED_ID } from "./helpers/pyth";
 
 describe("insertAsset", () => {
   const { provider, program } = getProviderAndProgram();
@@ -51,11 +51,14 @@ describe("insertAsset", () => {
     await createAta(provider.connection, mint, admin);
 
     configPda = deriveConfigPda(program.programId);
+    const feedId = hex32ToBytes(GOLD_PRICE_FEED_ID);
     await program.methods
       .initialize(
         [keeper.publicKey],
         tokenMint,
         treasury.publicKey,
+        feedId,
+        new anchor.BN(120),
         2_000,
         2_500,
         new anchor.BN(10_000_000),
@@ -99,7 +102,7 @@ describe("insertAsset", () => {
       .signers([admin])
       .rpc();
 
-    const symbolArray = symbolToBytes("ASA");
+    const symbol = stringToBytes("ASA");
     const round = await program.account.round.fetch(roundPda);
     const nextGroupId = round.totalGroups.addn(1);
 
@@ -109,7 +112,7 @@ describe("insertAsset", () => {
       nextGroupId
     );
     await program.methods
-      .insertGroupAsset(symbolArray)
+      .insertGroupAsset(symbol)
       .accounts({
         signer: admin.publicKey,
         config: configPda,
@@ -122,7 +125,7 @@ describe("insertAsset", () => {
   });
 
   it("insert asset happy path", async () => {
-    const symbol = symbolToBytes("2899.HK");
+    const symbol = stringToBytes("2899.HK");
     const ga = await program.account.groupAsset.fetch(groupAssetPda);
     const nextAssetId = ga.totalAssets.addn(1);
     const assetPda = deriveAssetPda(
@@ -155,9 +158,7 @@ describe("insertAsset", () => {
     expect(asset.group.toString()).to.eq(groupAssetPda.toString());
     expect(asset.round.toString()).to.eq(roundPda.toString());
     expect(asset.symbol.toString()).to.eq(symbol.toString());
-    expect(asset.priceFeedAccount.toString()).to.eq(
-      priceFeedAccount.toString()
-    );
+    expect(asset.feedId.toString()).to.eq(priceFeedAccount.toString());
 
     const updatedGroupAsset = await program.account.groupAsset.fetch(
       groupAssetPda
@@ -183,7 +184,7 @@ describe("insertAsset", () => {
       );
 
       await program.methods
-        .insertAsset(symbolToBytes(`S${i}`))
+        .insertAsset(stringToBytes(`S${i}`))
         .accounts({
           signer: admin.publicKey,
           config: configPda,
@@ -208,7 +209,7 @@ describe("insertAsset", () => {
       );
 
       await program.methods
-        .insertAsset(symbolToBytes("X"))
+        .insertAsset(stringToBytes("X"))
         .accounts({
           signer: admin.publicKey,
           config: configPda,

@@ -10,7 +10,8 @@ import {
 } from "./helpers/pda";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { expect } from "chai";
-import { symbolToBytes } from "./helpers/asset";
+import { hex32ToBytes, stringToBytes } from "./helpers/bytes";
+import { GOLD_PRICE_FEED_ID } from "./helpers/pyth";
 
 describe("insertGroupAsset", () => {
   const { provider, program } = getProviderAndProgram();
@@ -43,6 +44,7 @@ describe("insertGroupAsset", () => {
     tokenMint = mint;
 
     configPda = deriveConfigPda(program.programId);
+    const feedId = hex32ToBytes(GOLD_PRICE_FEED_ID);
 
     try {
       await program.methods
@@ -50,6 +52,8 @@ describe("insertGroupAsset", () => {
           [keeper.publicKey],
           tokenMint,
           treasury.publicKey,
+          feedId,
+          new anchor.BN(120),
           2_000,
           2_500,
           new anchor.BN(10_000_000),
@@ -100,7 +104,7 @@ describe("insertGroupAsset", () => {
 
   it("insert group asset happy path", async () => {
     const symbol = "ASA";
-    const symbolArray = symbolToBytes(symbol);
+    const symbolArray = stringToBytes(symbol);
 
     const round = await program.account.round.fetch(roundPda);
     const nextGroupId = round.totalGroups.addn(1);
@@ -135,7 +139,7 @@ describe("insertGroupAsset", () => {
 
   it("fails unauthorized", async () => {
     const symbol = "AFR";
-    const symbolArray = symbolToBytes(symbol);
+    const symbolArray = stringToBytes(symbol);
 
     const round = await program.account.round.fetch(roundPda);
     const nextGroupId = round.totalGroups.addn(1);

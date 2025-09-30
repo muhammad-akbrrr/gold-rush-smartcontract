@@ -100,6 +100,12 @@ pub fn handler(ctx: Context<SettleGroupRound>) -> Result<()> {
     let config = &ctx.accounts.config;
     let round = &mut ctx.accounts.round;
 
+    // Consider full-draw if all groups are tied as winners.
+    // In this simplified definition, if winner_group_ids covers all groups in the round,
+    // we treat the round as a draw for payout purposes.
+    let is_full_draw =
+        round.total_groups > 0 && (round.winner_group_ids.len() as u64) >= round.total_groups;
+
     // If no bets, end quickly
     if round.total_bets == 0 {
         round.status = RoundStatus::Ended;
@@ -109,39 +115,45 @@ pub fn handler(ctx: Context<SettleGroupRound>) -> Result<()> {
 
     // If first batch, compute and lock fee and reward pool once (GroupBattle fee)
     if round.total_reward_pool == 0 && round.total_fee_collected == 0 {
-        let fee_bps = config.fee_group_battle_bps;
-        let fee_amount = round
-            .total_pool
-            .checked_mul(fee_bps as u64)
-            .and_then(|x| x.checked_div(HUNDRED_PERCENT_BPS as u64))
-            .ok_or(GoldRushError::Overflow)?;
-        round.total_fee_collected = fee_amount;
-        round.total_reward_pool = round
-            .total_pool
-            .checked_sub(fee_amount)
-            .ok_or(GoldRushError::Underflow)?;
+        if is_full_draw {
+            // Full draw: skip fee; entire pool becomes reward pool for refunds
+            round.total_fee_collected = 0;
+            round.total_reward_pool = round.total_pool;
+        } else {
+            let fee_bps = config.fee_group_battle_bps;
+            let fee_amount = round
+                .total_pool
+                .checked_mul(fee_bps as u64)
+                .and_then(|x| x.checked_div(HUNDRED_PERCENT_BPS as u64))
+                .ok_or(GoldRushError::Overflow)?;
+            round.total_fee_collected = fee_amount;
+            round.total_reward_pool = round
+                .total_pool
+                .checked_sub(fee_amount)
+                .ok_or(GoldRushError::Underflow)?;
 
-        // Transfer fee to treasury
-        if fee_amount > 0 {
-            let transfer_accounts = Transfer {
-                from: ctx.accounts.round_vault.to_account_info(),
-                to: ctx.accounts.treasury_token_account.to_account_info(),
-                authority: round.to_account_info(),
-            };
-            let round_bump = round.bump;
-            let round_id = round.id;
-            let seeds = &[
-                ROUND_SEED.as_bytes(),
-                &round_id.to_le_bytes(),
-                &[round_bump],
-            ];
-            let signer = &[&seeds[..]];
-            let transfer_ctx = CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                transfer_accounts,
-                signer,
-            );
-            transfer(transfer_ctx, fee_amount)?;
+            // Transfer fee to treasury
+            if fee_amount > 0 {
+                let transfer_accounts = Transfer {
+                    from: ctx.accounts.round_vault.to_account_info(),
+                    to: ctx.accounts.treasury_token_account.to_account_info(),
+                    authority: round.to_account_info(),
+                };
+                let round_bump = round.bump;
+                let round_id = round.id;
+                let seeds = &[
+                    ROUND_SEED.as_bytes(),
+                    &round_id.to_le_bytes(),
+                    &[round_bump],
+                ];
+                let signer = &[&seeds[..]];
+                let transfer_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    transfer_accounts,
+                    signer,
+                );
+                transfer(transfer_ctx, fee_amount)?;
+            }
         }
     }
 
@@ -176,32 +188,37 @@ pub fn handler(ctx: Context<SettleGroupRound>) -> Result<()> {
             GoldRushError::InvalidBetAccount
         );
 
-        // Decide result safely. A bet wins if its group (when present)
-        // matches any winner_group_ids' PDA.
-        let is_winner = if let Some(group_key) = bet.group {
-            round.winner_group_ids.iter().any(|gid| {
-                let expected_group_pda = Pubkey::find_program_address(
-                    &[
-                        GROUP_ASSET_SEED.as_bytes(),
-                        round.key().as_ref(),
-                        &gid.to_le_bytes(),
-                    ],
-                    ctx.program_id,
-                )
-                .0;
-                expected_group_pda == group_key
-            })
+        if is_full_draw {
+            // Full draw: mark bet as Draw
+            bet.status = BetStatus::Draw;
         } else {
-            false
-        };
+            // Decide result safely. A bet wins if its group (when present)
+            // matches any winner_group_ids' PDA.
+            let is_winner = if let Some(group_key) = bet.group {
+                round.winner_group_ids.iter().any(|gid| {
+                    let expected_group_pda = Pubkey::find_program_address(
+                        &[
+                            GROUP_ASSET_SEED.as_bytes(),
+                            round.key().as_ref(),
+                            &gid.to_le_bytes(),
+                        ],
+                        ctx.program_id,
+                    )
+                    .0;
+                    expected_group_pda == group_key
+                })
+            } else {
+                false
+            };
 
-        if is_winner {
-            bet.status = BetStatus::Won;
-            batch_winners_weight = batch_winners_weight
-                .checked_add(bet.weight)
-                .ok_or(GoldRushError::Overflow)?;
-        } else {
-            bet.status = BetStatus::Lost;
+            if is_winner {
+                bet.status = BetStatus::Won;
+                batch_winners_weight = batch_winners_weight
+                    .checked_add(bet.weight)
+                    .ok_or(GoldRushError::Overflow)?;
+            } else {
+                bet.status = BetStatus::Lost;
+            }
         }
 
         // Serialize back

@@ -640,9 +640,9 @@ This ensures that even small gold changes may yield competitive rewards due to e
   Earlier bets get proportionally more weight.  
   Example (normalized by round duration):  
 
-  $$
+$$
   \text{time factor} = 1 - \frac{\text{time elapsed}}{\text{round duration}}
-  $$  
+$$  
 
   If placed at the very start → `1.0`  
   If placed halfway → `0.5`  
@@ -652,9 +652,9 @@ This ensures that even small gold changes may yield competitive rewards due to e
   Earlier bets are rewarded **more aggressively**.  
   Example (quadratic decay):  
 
-  $$
-  \text{time factor} = \left(1 - \frac{\text{time elapsed}}{\text{round duration}}\right)^2
-  $$
+$$
+\text{time factor} = \left(1 - \frac{\text{time elapsed}}{\text{round duration}}\right)^2
+$$
 
   If placed at the very start → `1.0`
   If placed halfway → `0.25`
@@ -700,6 +700,8 @@ $$
 
 > Note: At this stage, no rewards are sent yet — only marking bet results and collecting fees.
 
+Important: If a round resolves to a full draw (i.e., `price_change == 0` for Single-Asset, or all evaluated bets become `Draw` in Group Battle), then no fees are collected for that round. In that case, `total_fee_collected = 0` and `total_reward_pool = total_pool` to enable full refunds.
+
 ### Self-Claim by User
 
 When a user claims their reward:
@@ -721,6 +723,7 @@ $$
 - `round.total_reward_pool` is equal to `round.total_pool - round.total_fee_collected`.
 - The reward includes the user's original stake. Losing users lose their stake, and their funds contribute to the reward pool for winners.
 - If **all users win**, no one loses their stake. All winners simply receive their original stake back minus proportional fees.
+- If a round is a full draw, fees are not collected and draw bets can be fully refunded from the vault.
 
 ---
 
@@ -1290,7 +1293,7 @@ _None_
 
 ### Keeper: Settle Single-Asset Round (`settle_single_round`)
 #### Purpose
-Settle a Single-Asset round after `end_time` by using the final price, marking bets as Won/Lost/Draw, and collecting fees.
+Settle a Single-Asset round after `end_time` by using the final price, marking bets as Won/Lost/Draw, and collecting fees (except in full draw).
 
 #### Context
 | Field         | Type                    | Description                                         |
@@ -1327,7 +1330,8 @@ _None_
 2. Set `round.final_price`.
 3. Compute `price_change = final_price - start_price`.
    - For each `Bet` PDA in remaining accounts: determine Won/Lost/Draw via `is_bet_winner`, accumulate `winners_weight`, serialize back.
-   - Compute `fee_amount` from `fee_single_asset_bps` (Single-Asset), transfer from `round_vault` to treasury ATA.
+   - If `price_change == 0` (all bets evaluate to `Draw`), then set `total_fee_collected = 0` and do not transfer any fees to the treasury for this round.
+   - Else, compute `fee_amount` from `fee_single_asset_bps` and transfer from `round_vault` to treasury ATA.
    - Update round fields: `winners_weight`, `total_fee_collected`, `final_price`, and status to `Ended` when all bets are processed; otherwise mark `PendingSettlement`.
 
 #### Emits / Side Effects
@@ -1362,7 +1366,7 @@ _None_
 #### Validations
 - `config.status` in {Active, EmergencyPaused}
 - For each pair: Asset PDA valid for `group_asset` and `round`, and `asset.price_feed_account == pyth_price_account.key()`
-- Pyth price not older than `ASSET_PRICE_STALENESS_THRESHOLD_SECONDS`
+- Pyth price not older than `config.max_price_update_age_secs`
 
 #### Logic
 For each pair `(asset, pyth)`:
@@ -1394,7 +1398,7 @@ _None_
 #### Validations
 - `config.status` in {Active, EmergencyPaused}
 - For each pair: Asset PDA valid for `group_asset` and `round`, and `asset.price_feed_account == pyth_price_account.key()`
-- Pyth price not older than `ASSET_PRICE_STALENESS_THRESHOLD_SECONDS`
+- Pyth price not older than `config.max_price_update_age_secs`
 
 #### Logic
 For each pair `(asset, pyth)`:
@@ -1495,8 +1499,9 @@ _None_
 1. For each `Bet` PDA in remaining accounts:
    - A bet wins if `bet.group` ∈ `winner_group_ids`. Direction logic uses group’s `avg_growth_rate_bps` sign.
    - Accumulate `winners_weight`, serialize back.
-2. Compute `fee_amount` from `fee_group_battle_bps` (Group-Battle), transfer from `round_vault` to treasury ATA.
-3. Update round fields: `winners_weight`, `total_fee_collected`. Set `status = Ended` when all bets processed; otherwise `PendingSettlement`.
+2. If all evaluated bets become `Draw` (e.g., ties resulting in neutral effective change), then set `total_fee_collected = 0` and do not transfer fees.
+3. Else, compute `fee_amount` from `fee_group_battle_bps` (Group-Battle), transfer from `round_vault` to treasury ATA.
+4. Update round fields: `winners_weight`, `total_fee_collected`. Set `status = Ended` when all bets processed; otherwise `PendingSettlement`.
 
 #### Emits / Side Effects
 - Bets move from `Pending` to `Won`/`Lost`/`Draw`.
@@ -1653,7 +1658,7 @@ _None_
 - `config.status in { Active, EmergencyPaused }`
 - `round.status == Ended`
 - `bet.user == bettor.key()`
-- `bet.status in { Won, Draw }` (Won gets proportional reward; Draw returns stake)
+- `bet.status in { Won, Draw }` (Won gets proportional reward; Draw returns full stake if the round is a full draw — i.e., no fees were collected)
 - `bet.claimed == false`
 - `round_vault.mint == mint` and `bettor_token_account.mint == mint`
 - If `bet.status == Won`: `round.winners_weight > 0`
@@ -1662,7 +1667,10 @@ _None_
 1. Calculate reward amount based on:
 
 $$
-\text{reward} = \frac{\text{bet weight}}{\text{round winners weight}} \times \text{round total reward pool}
+\text{reward} = \begin{cases}
+\frac{\text{bet weight}}{\text{round winners weight}} \times \text{round total reward pool}, & \text{if Won} \\
+\text{bet.amount}, & \text{if Draw and the round is a full draw (no fees)}
+\end{cases}
 $$
 
 3. Transfer reward `amount` of GRT from `round_vault` to `bettor_token_account`
@@ -1679,7 +1687,7 @@ $$
 | `Unauthorized` | If `bet.user != bettor.key()` |
 | `RoundNotEnded` | If `round.status != Ended` |
 | `ClaimPendingBet` | If `bet.status == Pending` |
-| `ClaimLosingBet` | If `bet.status == Lost` |
+| `BetNotWonOrDraw` | If `bet.status != Won` or `bet.status != Draw` |
 | `AlreadyClaimed` | If `bet.claimed == true` |
 ---
 

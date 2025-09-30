@@ -5,7 +5,7 @@ use anchor_spl::{
     associated_token::AssociatedToken,
     token::{transfer, Mint, Token, TokenAccount, Transfer},
 };
-use pyth_solana_receiver_sdk::price_update::{get_feed_id_from_hex, PriceUpdateV2};
+use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 
 #[derive(Accounts)]
 pub struct SettleSingleRound<'info> {
@@ -110,8 +110,8 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleSingleRound<'info
 
     // If final price already set, skip reading Pyth. Otherwise, expect the first
     // remaining account to be the Pyth PriceUpdateV2 account.
-    let (final_price, first_bet_index): (u64, usize) = if round.final_price.is_some() {
-        (round.final_price.unwrap(), 0)
+    let (final_price, first_bet_index): (u64, usize) = if let Some(fp) = round.final_price {
+        (fp, 0)
     } else {
         require!(
             !ctx.remaining_accounts.is_empty(),
@@ -120,13 +120,11 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleSingleRound<'info
 
         let price_update: Account<PriceUpdateV2> = Account::try_from(&ctx.remaining_accounts[0])
             .map_err(|_| GoldRushError::InvalidPriceUpdateAccountData)?;
-        let feed_id = get_feed_id_from_hex(PYTH_GOLD_PRICE_FEED_ID_HEX)
-            .map_err(|_| GoldRushError::PythError)?;
         let price = price_update
             .get_price_no_older_than(
                 &now,
-                ASSET_PRICE_STALENESS_THRESHOLD_SECONDS as u64,
-                &feed_id,
+                config.max_price_update_age_secs,
+                &config.single_asset_feed_id,
             )
             .map_err(|_| GoldRushError::PythError)?;
 
@@ -151,49 +149,55 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleSingleRound<'info
         return Ok(());
     }
 
-    // If first batch, compute and lock fee and reward pool once
-    if round.total_reward_pool == 0 && round.total_fee_collected == 0 {
-        let fee_bps = config.fee_single_asset_bps;
-        let fee_amount = round
-            .total_pool
-            .checked_mul(fee_bps as u64)
-            .and_then(|x| x.checked_div(HUNDRED_PERCENT_BPS as u64))
-            .ok_or(GoldRushError::Overflow)?;
-        round.total_fee_collected = fee_amount;
-        round.total_reward_pool = round
-            .total_pool
-            .checked_sub(fee_amount)
-            .ok_or(GoldRushError::Underflow)?;
-
-        // Transfer fee to treasury
-        if fee_amount > 0 {
-            let transfer_accounts = Transfer {
-                from: ctx.accounts.round_vault.to_account_info(),
-                to: ctx.accounts.treasury_token_account.to_account_info(),
-                authority: round.to_account_info(),
-            };
-            let round_bump = round.bump;
-            let round_id = round.id;
-            let seeds = &[
-                ROUND_SEED.as_bytes(),
-                &round_id.to_le_bytes(),
-                &[round_bump],
-            ];
-            let signer = &[&seeds[..]];
-            let transfer_ctx = CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                transfer_accounts,
-                signer,
-            );
-            transfer(transfer_ctx, fee_amount)?;
-        }
-    }
-
     // Determine price change
-    let start_price = round.start_price.unwrap();
+    let start_price = round.start_price.ok_or(GoldRushError::InvalidAssetPrice)?;
     let price_change: i64 = (final_price as i64)
         .checked_sub(start_price as i64)
         .ok_or(GoldRushError::Overflow)?;
+
+    // If first batch, compute and lock fee and reward pool once
+    if round.total_reward_pool == 0 && round.total_fee_collected == 0 {
+        if price_change == 0 {
+            // Full draw: no fee collected, reward pool equals total pool
+            round.total_fee_collected = 0;
+            round.total_reward_pool = round.total_pool;
+        } else {
+            let fee_bps = config.fee_single_asset_bps;
+            let fee_amount = round
+                .total_pool
+                .checked_mul(fee_bps as u64)
+                .and_then(|x| x.checked_div(HUNDRED_PERCENT_BPS as u64))
+                .ok_or(GoldRushError::Overflow)?;
+            round.total_fee_collected = fee_amount;
+            round.total_reward_pool = round
+                .total_pool
+                .checked_sub(fee_amount)
+                .ok_or(GoldRushError::Underflow)?;
+
+            // Transfer fee to treasury
+            if fee_amount > 0 {
+                let transfer_accounts = Transfer {
+                    from: ctx.accounts.round_vault.to_account_info(),
+                    to: ctx.accounts.treasury_token_account.to_account_info(),
+                    authority: round.to_account_info(),
+                };
+                let round_bump = round.bump;
+                let round_id = round.id;
+                let seeds = &[
+                    ROUND_SEED.as_bytes(),
+                    &round_id.to_le_bytes(),
+                    &[round_bump],
+                ];
+                let signer = &[&seeds[..]];
+                let transfer_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    transfer_accounts,
+                    signer,
+                );
+                transfer(transfer_ctx, fee_amount)?;
+            }
+        }
+    }
 
     // Iterate over Bet PDAs in remaining accounts (batched)
     let mut batch_winners_weight = 0u64;

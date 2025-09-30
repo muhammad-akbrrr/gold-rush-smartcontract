@@ -4,6 +4,8 @@ import { expect } from "chai";
 import { getProviderAndProgram } from "./helpers/env";
 import { createAta, createMintToken } from "./helpers/token";
 import { deriveConfigPda } from "./helpers/pda";
+import { hex32ToBytes } from "./helpers/bytes";
+import { GOLD_PRICE_FEED_ID } from "./helpers/pyth";
 
 describe("initialize", () => {
   const { provider, program } = getProviderAndProgram();
@@ -30,12 +32,16 @@ describe("initialize", () => {
     const badKeeperList: PublicKey[] = [];
     const badMint = tokenMint; // still valid, focus on keepers here
     const badTreasury = treasury.publicKey;
+    const feedId = hex32ToBytes(GOLD_PRICE_FEED_ID);
+
     try {
       await program.methods
         .initialize(
           badKeeperList,
           badMint,
           badTreasury,
+          feedId,
+          new anchor.BN(120),
           2_000,
           2_500,
           new anchor.BN(10_000_000),
@@ -64,12 +70,16 @@ describe("initialize", () => {
   });
 
   it("happy path", async () => {
+    const feedId = hex32ToBytes(GOLD_PRICE_FEED_ID);
+
     try {
       await program.methods
         .initialize(
           [keeper.publicKey],
           tokenMint,
           treasury.publicKey,
+          feedId,
+          new anchor.BN(120),
           2_000,
           2_500,
           new anchor.BN(10_000_000),
@@ -101,12 +111,16 @@ describe("initialize", () => {
   });
 
   it("fails if already initialized", async () => {
+    const feedId = hex32ToBytes(GOLD_PRICE_FEED_ID);
+
     try {
       await program.methods
         .initialize(
           [keeper.publicKey],
           tokenMint,
           treasury.publicKey,
+          feedId,
+          new anchor.BN(120),
           2_000,
           2_500,
           new anchor.BN(10_000_000),

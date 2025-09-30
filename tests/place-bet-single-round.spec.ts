@@ -11,7 +11,8 @@ import {
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { expect } from "chai";
 import { PythSolanaReceiver } from "@pythnetwork/pyth-solana-receiver";
-import { SOL_PRICE_FEED_ID } from "./helpers/pyth";
+import { GOLD_PRICE_FEED_ID, SOL_PRICE_FEED_ID } from "./helpers/pyth";
+import { hex32ToBytes } from "./helpers/bytes";
 
 describe("placeBetSingleRound", () => {
   const { provider, program } = getProviderAndProgram();
@@ -61,11 +62,14 @@ describe("placeBetSingleRound", () => {
     );
 
     configPda = deriveConfigPda(program.programId);
+    const feedId = hex32ToBytes(GOLD_PRICE_FEED_ID);
     await program.methods
       .initialize(
         [keeper.publicKey],
         tokenMint,
         treasury.publicKey,
+        feedId,
+        new anchor.BN(120),
         2_000,
         2_500,
         new anchor.BN(10_000_000),

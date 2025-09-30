@@ -86,6 +86,8 @@ pub fn handler(
     keeper_authorities: Vec<Pubkey>,
     token_mint: Pubkey,
     treasury: Pubkey,
+    single_asset_feed_id: [u8; 32],
+    max_price_update_age_secs: u64,
     fee_single_asset_bps: u16,
     fee_group_battle_bps: u16,
     min_bet_amount: u64,
@@ -113,6 +115,8 @@ pub fn handler(
     config.keeper_authorities = keeper_authorities;
     config.token_mint = token_mint;
     config.treasury = treasury;
+    config.single_asset_feed_id = single_asset_feed_id;
+    config.max_price_update_age_secs = max_price_update_age_secs;
     config.fee_single_asset_bps = fee_single_asset_bps;
     config.fee_group_battle_bps = fee_group_battle_bps;
     config.min_bet_amount = min_bet_amount;

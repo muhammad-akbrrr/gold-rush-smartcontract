@@ -1,6 +1,6 @@
 use crate::{constants::*, error::GoldRushError, state::*, utils::*};
 use anchor_lang::prelude::*;
-use pyth_solana_receiver_sdk::price_update::{get_feed_id_from_hex, PriceUpdateV2};
+use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 
 #[derive(Accounts)]
 pub struct StartRound<'info> {
@@ -53,6 +53,7 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, StartRound<'info>>) -> 
     // validate
     ctx.accounts.validate()?;
 
+    let config = &ctx.accounts.config;
     let round = &mut ctx.accounts.round;
 
     // Single-Asset: validate by market type, take the price from the oracle
@@ -65,13 +66,11 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, StartRound<'info>>) -> 
 
         let price_update: Account<PriceUpdateV2> = Account::try_from(&ctx.remaining_accounts[0])
             .map_err(|_| GoldRushError::InvalidPriceUpdateAccountData)?;
-        let feed_id = get_feed_id_from_hex(PYTH_GOLD_PRICE_FEED_ID_HEX)
-            .map_err(|_| GoldRushError::PythError)?;
         let price = price_update
             .get_price_no_older_than(
                 &Clock::get()?,
-                ASSET_PRICE_STALENESS_THRESHOLD_SECONDS as u64,
-                &feed_id,
+                config.max_price_update_age_secs,
+                &config.single_asset_feed_id,
             )
             .map_err(|_| GoldRushError::PythError)?;
 

@@ -12,6 +12,8 @@ pub struct Config {
     // --- Token & Treasury ---
     pub token_mint: Pubkey, // The Gold Rush Token (GRT) used for betting.
     pub treasury: Pubkey,   // The address where the fees are sent.
+    pub single_asset_feed_id: [u8; 32], // The Pyth feed id for the single asset game.
+    pub max_price_update_age_secs: u64, // The maximum age of the price update in seconds.
 
     // --- Fee Config ---
     pub fee_single_asset_bps: u16, // The fee percentage charged on bets based on Single Asset.

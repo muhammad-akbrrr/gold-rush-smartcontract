@@ -69,6 +69,7 @@ pub fn handler(ctx: Context<CaptureEndPrice>) -> Result<()> {
         GoldRushError::InvalidRemainingAccountsLength
     );
 
+    let config = &ctx.accounts.config;
     let round = &ctx.accounts.round;
     let group_asset = &mut ctx.accounts.group_asset;
 
@@ -138,7 +139,7 @@ pub fn handler(ctx: Context<CaptureEndPrice>) -> Result<()> {
         let price = price_update
             .get_price_no_older_than(
                 &finalized_price_at,
-                ASSET_PRICE_STALENESS_THRESHOLD_SECONDS as u64,
+                config.max_price_update_age_secs,
                 &asset.feed_id,
             )
             .map_err(|_| GoldRushError::PythError)?;

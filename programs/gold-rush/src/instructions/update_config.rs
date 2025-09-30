@@ -102,6 +102,8 @@ pub fn handler(
     new_keeper_authorities: Option<Vec<Pubkey>>,
     new_token_mint: Option<Pubkey>,
     new_treasury: Option<Pubkey>,
+    new_single_asset_feed_id: Option<[u8; 32]>,
+    new_max_price_update_age_secs: Option<u64>,
     new_fee_single_asset_bps: Option<u16>,
     new_fee_group_battle_bps: Option<u16>,
     new_min_bet_amount: Option<u64>,
@@ -133,6 +135,12 @@ pub fn handler(
     }
     if let Some(new_treasury) = new_treasury {
         config.treasury = new_treasury;
+    }
+    if let Some(new_single_asset_feed_id) = new_single_asset_feed_id {
+        config.single_asset_feed_id = new_single_asset_feed_id;
+    }
+    if let Some(new_max_price_update_age_secs) = new_max_price_update_age_secs {
+        config.max_price_update_age_secs = new_max_price_update_age_secs;
     }
     if let Some(new_fee_single_asset_bps) = new_fee_single_asset_bps {
         config.fee_single_asset_bps = new_fee_single_asset_bps;

@@ -21,17 +21,17 @@ pub struct ClaimReward<'info> {
 
     #[account(
         mut,
-        seeds = [BET_SEED.as_bytes(), round.key().as_ref(), &bet.id.to_le_bytes()],
-        bump
-    )]
-    pub bet: Account<'info, Bet>,
-
-    #[account(
-        mut,
         seeds = [VAULT_SEED.as_bytes(), round.key().as_ref()],
         bump
     )]
     pub round_vault: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        seeds = [BET_SEED.as_bytes(), round.key().as_ref(), &bet.id.to_le_bytes()],
+        bump
+    )]
+    pub bet: Account<'info, Bet>,
 
     #[account(
         mut,
@@ -68,13 +68,8 @@ impl<'info> ClaimReward<'info> {
         );
 
         require!(
-            self.bet.status != BetStatus::Pending,
-            GoldRushError::ClaimPendingBet
-        );
-
-        require!(
-            self.bet.status != BetStatus::Lost,
-            GoldRushError::ClaimLosingBet
+            matches!(self.bet.status, BetStatus::Won | BetStatus::Draw),
+            GoldRushError::BetNotWonOrDraw
         );
 
         require!(self.bet.claimed == false, GoldRushError::AlreadyClaimed);
