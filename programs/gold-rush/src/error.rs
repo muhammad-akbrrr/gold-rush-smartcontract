@@ -117,7 +117,10 @@ pub enum GoldRushError {
     InvalidDuration = 0x3009,
 
     #[msg("Max assets reached")]
-    MaxAssetsReached = 0x300a,
+    MaxAssetsReached = 0x3010,
+
+    #[msg("Invalid round market type")]
+    InvalidRoundMarketType = 0x3011,
 
     // Betting Errors (0x4000 - 0x4999)
     #[msg("Bet amount is below minimum required")]

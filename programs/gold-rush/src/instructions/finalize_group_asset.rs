@@ -143,7 +143,7 @@ pub fn handler(ctx: Context<FinalizeGroupAsset>) -> Result<()> {
             .checked_sub(start_price as i128)
             .ok_or(GoldRushError::Overflow)?;
         let growth_rate_bps_i128 = numerator
-            .checked_mul(10000)
+            .checked_mul(10_000)
             .ok_or(GoldRushError::Overflow)?
             .checked_div(start_price as i128)
             .ok_or(GoldRushError::Underflow)?;

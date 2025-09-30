@@ -1107,7 +1107,7 @@ _None_
 
 #### Validations
 - `config.status` in {Active, EmergencyPaused}
-- `group_asset.total_assets < MAX_GROUP_ASSETS`
+- `group_asset.total_assets < MAX_ASSETS_IN_GROUP`
 - Caller must be `config.admin` (as implemented)
 
 #### Logic

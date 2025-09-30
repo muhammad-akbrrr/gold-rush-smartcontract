@@ -42,12 +42,12 @@ impl<'info> InsertGroupAsset<'info> {
         );
 
         require!(
-            matches!(self.round.status, RoundStatus::Scheduled),
+            self.round.status == RoundStatus::Scheduled,
             GoldRushError::InvalidRoundStatus
         );
         require!(
-            matches!(self.round.market_type, MarketType::GroupBattle),
-            GoldRushError::InvalidRoundStatus
+            self.round.market_type == MarketType::GroupBattle,
+            GoldRushError::InvalidRoundMarketType,
         );
 
         require!(

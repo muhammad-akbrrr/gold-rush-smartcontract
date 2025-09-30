@@ -66,7 +66,7 @@ impl<'info> InsertAsset<'info> {
         );
 
         require!(
-            self.group_asset.total_assets < MAX_GROUP_ASSETS as u64,
+            self.group_asset.total_assets < MAX_ASSETS_IN_GROUP as u64,
             GoldRushError::MaxAssetsReached
         );
 

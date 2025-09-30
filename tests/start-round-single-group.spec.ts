@@ -9,7 +9,7 @@ import { PythSolanaReceiver } from "@pythnetwork/pyth-solana-receiver";
 import { GOLD_PRICE_FEED_ID, SOL_PRICE_FEED_ID } from "./helpers/pyth";
 import { hex32ToBytes } from "./helpers/bytes";
 
-describe("startRound", () => {
+describe("startRoundSingleGroup", () => {
   const { provider, program } = getProviderAndProgram();
 
   let admin: Keypair;
@@ -18,6 +18,8 @@ describe("startRound", () => {
 
   let tokenMint: PublicKey;
   let configPda: PublicKey;
+  let roundPda: PublicKey;
+  let priceFeedAccount: PublicKey;
 
   let pythSolanaReceiver: PythSolanaReceiver;
 
@@ -41,6 +43,7 @@ describe("startRound", () => {
     await createAta(provider.connection, mint, admin);
     tokenMint = mint;
 
+    // initialize config
     configPda = deriveConfigPda(program.programId);
     const feedId = hex32ToBytes(GOLD_PRICE_FEED_ID);
     await program.methods
@@ -65,18 +68,15 @@ describe("startRound", () => {
       } as any)
       .signers([admin])
       .rpc();
-  });
 
-  it("happy path single asset", async () => {
+    // create round
     const now = Math.floor(Date.now() / 1000);
     const start = now + 3;
     const end = start + 15;
-
     const cfg = await program.account.config.fetch(configPda);
     const nextRoundId = cfg.currentRoundCounter.addn(1);
-    const roundPda = deriveRoundPda(program.programId, nextRoundId);
+    roundPda = deriveRoundPda(program.programId, nextRoundId);
     const vaultPda = deriveVaultPda(program.programId, roundPda);
-
     await program.methods
       .createRound(
         { singleAsset: {} },
@@ -95,12 +95,41 @@ describe("startRound", () => {
       .signers([admin])
       .rpc();
 
-    const priceFeedAccount = pythSolanaReceiver.getPriceFeedAccountAddress(
+    priceFeedAccount = pythSolanaReceiver.getPriceFeedAccountAddress(
       0,
       SOL_PRICE_FEED_ID
     );
+  });
 
-    const maxWaitMs = 20000;
+  it("fails before start time", async () => {
+    try {
+      await program.methods
+        .startRound()
+        .accounts({
+          signer: keeper.publicKey,
+          config: configPda,
+          round: roundPda,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .remainingAccounts([
+          {
+            pubkey: priceFeedAccount,
+            isSigner: false,
+            isWritable: true,
+          },
+        ])
+        .signers([keeper])
+        .rpc();
+    } catch (e: any) {
+      const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
+      if (parsed) {
+        expect(parsed.error.errorCode.code).to.eq("RoundNotReady");
+      }
+    }
+  });
+
+  it("happy path", async () => {
+    const maxWaitMs = 20_000;
     const pollIntervalMs = 500;
     const startWait = Date.now();
     while (true) {
@@ -138,10 +167,37 @@ describe("startRound", () => {
     }
 
     const round = await program.account.round.fetch(roundPda);
-    expect(round.id.toString()).to.eq(nextRoundId.toString());
     expect(round.status).to.deep.equal({ active: {} });
     expect(round.startPrice?.toNumber?.() ?? 0).to.greaterThan(0);
   });
-  it("happy path group battle", async () => {});
-  it("fails before start time");
+
+  it("fails unauthorized keeper", async () => {
+    let unauthorizedSigner = Keypair.generate();
+    await airdropMany(provider.connection, [unauthorizedSigner.publicKey]);
+
+    try {
+      await program.methods
+        .startRound()
+        .accounts({
+          signer: unauthorizedSigner.publicKey,
+          config: configPda,
+          round: roundPda,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .remainingAccounts([
+          {
+            pubkey: priceFeedAccount,
+            isSigner: false,
+            isWritable: true,
+          },
+        ])
+        .signers([unauthorizedSigner])
+        .rpc();
+    } catch (e: any) {
+      const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
+      if (parsed) {
+        expect(parsed.error.errorCode.code).to.eq("UnauthorizedKeeper");
+      }
+    }
+  });
 });

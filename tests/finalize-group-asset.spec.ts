@@ -5,6 +5,8 @@ import { createAta, createMintToken, mintAmount } from "./helpers/token";
 import {
   deriveBetPda,
   deriveConfigPda,
+  deriveGroupAssetPda,
+  deriveAssetPda,
   deriveRoundPda,
   deriveVaultPda,
 } from "./helpers/pda";
@@ -14,10 +16,10 @@ import {
 } from "@solana/spl-token";
 import { expect } from "chai";
 import { PythSolanaReceiver } from "@pythnetwork/pyth-solana-receiver";
-import { GOLD_PRICE_FEED_ID } from "./helpers/pyth";
+import { GOLD_PRICE_FEED_ID, SOL_PRICE_FEED_ID } from "./helpers/pyth";
 import { hex32ToBytes, stringToBytes } from "./helpers/bytes";
 
-describe("claimRewardSingleRound", () => {
+describe("finalizeGroupAsset", () => {
   const { provider, program } = getProviderAndProgram();
 
   let admin: Keypair;
@@ -68,6 +70,7 @@ describe("claimRewardSingleRound", () => {
       100_000_000
     );
 
+    // initialize config
     configPda = deriveConfigPda(program.programId);
     const feedId = hex32ToBytes(GOLD_PRICE_FEED_ID);
     await program.methods
@@ -93,17 +96,17 @@ describe("claimRewardSingleRound", () => {
       .signers([admin])
       .rpc();
 
+    // create round
     const now = Math.floor(Date.now() / 1000);
     const start = now + 3;
-    const end = start + 15; // 15 seconds
+    const end = start + 15;
     const cfg = await program.account.config.fetch(configPda);
     const nextRoundId = cfg.currentRoundCounter.addn(1);
     roundPda = deriveRoundPda(program.programId, nextRoundId);
     vaultPda = deriveVaultPda(program.programId, roundPda);
-
     await program.methods
       .createRound(
-        { singleAsset: {} },
+        { groupBattle: {} },
         new anchor.BN(start),
         new anchor.BN(end)
       )
@@ -119,15 +122,74 @@ describe("claimRewardSingleRound", () => {
       .signers([admin])
       .rpc();
 
+    // insert group asset
+    const groupAssetPdas = [];
+    for (let i = 0; i < 3; i++) {
+      const symbol = stringToBytes(`ASA ${i}`);
+      const round = await program.account.round.fetch(roundPda);
+      const nextGroupId = round.totalGroups.addn(1);
+      const groupAssetPda = deriveGroupAssetPda(
+        program.programId,
+        roundPda,
+        nextGroupId
+      );
+      try {
+        await program.methods
+          .insertGroupAsset(symbol)
+          .accounts({
+            signer: admin.publicKey,
+            config: configPda,
+            round: roundPda,
+            groupAsset: groupAssetPda,
+            systemProgram: SystemProgram.programId,
+          } as any)
+          .signers([admin])
+          .rpc();
+
+        groupAssetPdas.push(groupAssetPda);
+      } catch (e: any) {
+        throw e;
+      }
+    }
+
+    // insert asset
+    for (const groupAssetPda of groupAssetPdas) {
+      for (let i = 0; i < 9; i++) {
+        const ga = await program.account.groupAsset.fetch(groupAssetPda);
+        const nextAssetId = ga.totalAssets.addn(1);
+        const assetPda = deriveAssetPda(
+          program.programId,
+          groupAssetPda,
+          nextAssetId
+        );
+
+        await program.methods
+          .insertAsset(stringToBytes(`S${i}`))
+          .accounts({
+            signer: admin.publicKey,
+            config: configPda,
+            round: roundPda,
+            groupAsset: groupAssetPda,
+            asset: assetPda,
+            feedPriceAccount: priceFeedAccount,
+            systemProgram: SystemProgram.programId,
+          } as any)
+          .signers([admin])
+          .rpc();
+      }
+    }
+
+    // capture start price
+
+    // start round
     priceFeedAccount = pythSolanaReceiver.getPriceFeedAccountAddress(
       0,
-      GOLD_PRICE_FEED_ID
+      SOL_PRICE_FEED_ID
     );
-
-    const maxWaitStartRoundMs = 20_000; // 20 seconds
-    const pollIntervalMs = 1_000;
-    const startWaitStartRound = Date.now();
-    const maxPythErrorIterations = 20;
+    const maxWaitMs = 20000;
+    const pollIntervalMs = 500;
+    const startWait = Date.now();
+    const maxPythErrorIterations = 10;
     let pythErrorIterations = 0;
     while (true) {
       try {
@@ -153,7 +215,7 @@ describe("claimRewardSingleRound", () => {
         const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
         const code = parsed?.error?.errorCode?.code;
         if (code === "RoundNotReady") {
-          if (Date.now() - startWaitStartRound > maxWaitStartRoundMs) {
+          if (Date.now() - startWait > maxWaitMs) {
             throw new Error("Timed out waiting for round to be ready");
           }
           await new Promise((r) => setTimeout(r, pollIntervalMs));
@@ -170,6 +232,7 @@ describe("claimRewardSingleRound", () => {
       }
     }
 
+    // place bet
     const amount = new anchor.BN(10_000_000); // 10 GRT
     const direction = { up: {} };
     const r = await program.account.round.fetch(roundPda);
@@ -181,7 +244,7 @@ describe("claimRewardSingleRound", () => {
         signer: user.publicKey,
         config: configPda,
         round: roundPda,
-        groupAsset: null,
+        groupAsset: groupAsset1Pda,
         bet: betPda,
         vault: vaultPda,
         tokenAccount: userTokenAccount,
@@ -191,140 +254,11 @@ describe("claimRewardSingleRound", () => {
       } as any)
       .signers([user])
       .rpc();
-
-    const startWaitPlaceBet = Date.now();
-    const maxWaitSettleRoundMs = 20_000; // 20 seconds
-    while (true) {
-      try {
-        await program.methods
-          .settleSingleRound()
-          .accounts({
-            signer: keeper.publicKey,
-            config: configPda,
-            round: roundPda,
-            roundVault: vaultPda,
-            treasury: treasury.publicKey,
-            treasuryTokenAccount: treasuryTokenAccount,
-            mint: tokenMint,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
-          } as any)
-          .remainingAccounts([
-            {
-              pubkey: priceFeedAccount,
-              isSigner: false,
-              isWritable: false,
-            },
-            {
-              pubkey: betPda,
-              isSigner: false,
-              isWritable: true,
-            },
-          ])
-          .signers([keeper])
-          .rpc();
-        break;
-      } catch (e: any) {
-        const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
-        const code = parsed?.error?.errorCode?.code;
-        if (code === "RoundNotReadyForSettlement") {
-          if (Date.now() - startWaitPlaceBet > maxWaitSettleRoundMs) {
-            throw new Error("Timed out waiting for round ended.");
-          }
-          await new Promise((r) => setTimeout(r, pollIntervalMs));
-          continue;
-        }
-        throw e;
-      }
-    }
   });
 
-  it("happy path", async () => {
-    try {
-      await program.methods
-        .claimReward()
-        .accounts({
-          signer: user.publicKey,
-          config: configPda,
-          round: roundPda,
-          roundVault: vaultPda,
-          treasury: treasury.publicKey,
-          bet: betPda,
-          bettorTokenAccount: userTokenAccount,
-          mint: tokenMint,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-        } as any)
-        .signers([user])
-        .rpc();
-    } catch (e: any) {
-      throw e;
-    }
+  it("fails before end time");
 
-    const bet = await program.account.bet.fetch(betPda);
-    expect(bet.status).to.deep.equal({ draw: {} });
-    expect(bet.claimed).to.be.true;
-  });
+  it("happy path");
 
-  it("fails claiming unauthorized signer", async () => {
-    let unauthorizedSigner = Keypair.generate();
-    await airdropMany(provider.connection, [unauthorizedSigner.publicKey]);
-    let unauthorizedSignerTokenAccount = await createAta(
-      provider.connection,
-      tokenMint,
-      unauthorizedSigner
-    );
-    try {
-      await program.methods
-        .claimReward()
-        .accounts({
-          signer: unauthorizedSigner.publicKey,
-          config: configPda,
-          round: roundPda,
-          roundVault: vaultPda,
-          treasury: treasury.publicKey,
-          bet: betPda,
-          bettorTokenAccount: unauthorizedSignerTokenAccount,
-          mint: tokenMint,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-        } as any)
-        .signers([unauthorizedSigner])
-        .rpc();
-    } catch (e: any) {
-      const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
-      if (parsed) {
-        expect(parsed.error.errorCode.code).to.eq("Unauthorized");
-      }
-    }
-  });
-
-  it("fails double-claim", async () => {
-    try {
-      await program.methods
-        .claimReward()
-        .accounts({
-          signer: user.publicKey,
-          config: configPda,
-          round: roundPda,
-          roundVault: vaultPda,
-          treasury: treasury.publicKey,
-          bet: betPda,
-          bettorTokenAccount: userTokenAccount,
-          mint: tokenMint,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-        } as any)
-        .signers([user])
-        .rpc();
-    } catch (e: any) {
-      const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
-      if (parsed) {
-        expect(parsed.error.errorCode.code).to.eq("AlreadyClaimed");
-      }
-
-      throw e;
-    }
-  });
+  it("fails group asset already finalized");
 });
