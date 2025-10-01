@@ -61,7 +61,7 @@ impl<'info> FinalizeStartGroupAsset<'info> {
 
         require!(
             self.group_asset.finalized_start_price_assets < self.group_asset.total_assets,
-            GoldRushError::GroupAssetAlreadyFinalizedStartPrice
+            GoldRushError::GroupAssetAlreadyCapturedStartPrice
         );
 
         Ok(())
@@ -127,7 +127,10 @@ pub fn handler(ctx: Context<FinalizeStartGroupAsset>) -> Result<()> {
     }
 
     // Set group asset fields
-    group_asset.finalized_start_price_assets = group_asset.total_assets;
+    group_asset.finalized_start_price_assets = group_asset
+        .finalized_start_price_assets
+        .checked_add(ctx.remaining_accounts.len() as u64)
+        .ok_or(GoldRushError::Overflow)?;
 
     Ok(())
 }

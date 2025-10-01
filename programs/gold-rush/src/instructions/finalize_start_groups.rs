@@ -49,7 +49,7 @@ impl<'info> FinalizeStartGroups<'info> {
 
         require!(
             self.round.captured_start_groups < self.round.total_groups,
-            GoldRushError::GroupAssetAlreadyCapturedStartPrice
+            GoldRushError::RoundAlreadyCapturedStartPrice
         );
 
         Ok(())
@@ -82,13 +82,13 @@ pub fn handler(ctx: Context<FinalizeStartGroups>) -> Result<()> {
         require_keys_eq!(
             *acc_info.owner,
             *ctx.program_id,
-            GoldRushError::InvalidAssetAccount
+            GoldRushError::InvalidGroupAssetAccount
         );
 
         // Borrow and deserialize GroupAsset
         let data = acc_info.try_borrow_data()?;
         let group_asset: GroupAsset = GroupAsset::try_deserialize(&mut &data[..])
-            .map_err(|_| GoldRushError::InvalidAssetAccountData)?;
+            .map_err(|_| GoldRushError::InvalidGroupAssetAccount)?;
 
         // Validate expected GroupAsset PDA
         let expected_pda = Pubkey::find_program_address(
@@ -103,22 +103,25 @@ pub fn handler(ctx: Context<FinalizeStartGroups>) -> Result<()> {
         require_keys_eq!(
             *acc_info.key,
             expected_pda,
-            GoldRushError::InvalidAssetAccount
+            GoldRushError::InvalidGroupAssetAccount
         );
-
-        // Must belong to this round
         require_keys_eq!(
             group_asset.round,
             round.key(),
-            GoldRushError::InvalidAssetAccount
+            GoldRushError::InvalidGroupAssetAccount
         );
 
-        // Set captured_start_groups on the round
-        round.captured_start_groups = round
-            .captured_start_groups
-            .checked_add(1)
-            .ok_or(GoldRushError::Overflow)?;
+        require!(
+            group_asset.finalized_start_price_assets >= group_asset.total_assets,
+            GoldRushError::GroupAssetNotFullyCapturedStartPrice
+        );
     }
+
+    // Set round fields
+    round.captured_start_groups = round
+        .captured_start_groups
+        .checked_add(ctx.remaining_accounts.len() as u64)
+        .ok_or(GoldRushError::Overflow)?;
 
     Ok(())
 }

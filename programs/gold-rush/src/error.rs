@@ -178,17 +178,23 @@ pub enum GoldRushError {
     #[msg("Bet status is Lost, cannot claim reward")]
     ClaimLosingBet = 0x5011,
 
-    #[msg("Group asset has already been finalized start price")]
-    GroupAssetAlreadyFinalizedStartPrice = 0x5012,
+    #[msg("Group asset has already been captured all start price of the assets")]
+    GroupAssetAlreadyCapturedStartPrice = 0x5012,
+
+    #[msg("Round has already been captured all start price of the assets in the group")]
+    RoundAlreadyCapturedStartPrice = 0x5013,
+
+    #[msg("Group asset is not fully captured start price")]
+    GroupAssetNotFullyCapturedStartPrice = 0x5014,
+
+    #[msg("Group asset is not fully captured end price")]
+    GroupAssetNotFullyCapturedEndPrice = 0x5015,
 
     #[msg("Group asset has already been finalized end price")]
-    GroupAssetAlreadyFinalizedEndPrice = 0x5013,
-
-    #[msg("Group asset has already been captured start price")]
-    GroupAssetAlreadyCapturedStartPrice = 0x5014,
+    GroupAssetAlreadyFinalizedEndPrice = 0x5016,
 
     #[msg("Group asset has already been captured end price")]
-    GroupAssetAlreadyCapturedEndPrice = 0x5015,
+    GroupAssetAlreadyCapturedEndPrice = 0x5017,
 
     // Account & Token Errors (0x6000 - 0x6999)
     #[msg("Invalid token account")]
@@ -221,4 +227,7 @@ pub enum GoldRushError {
 
     #[msg("Invalid price feed account")]
     InvalidPriceFeedAccount = 0x8003,
+
+    #[msg("Invalid group asset account data provided")]
+    InvalidGroupAssetAccount = 0x8004,
 }
