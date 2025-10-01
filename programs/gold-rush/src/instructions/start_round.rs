@@ -46,7 +46,10 @@ impl<'info> StartRound<'info> {
         );
 
         if matches!(self.round.market_type, MarketType::GroupBattle) {
-            //
+            require!(
+                self.round.captured_start_groups >= self.round.total_groups,
+                GoldRushError::RoundNotCapturedStartPrice
+            );
         }
 
         Ok(())
@@ -60,9 +63,7 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, StartRound<'info>>) -> 
     let config = &ctx.accounts.config;
     let round = &mut ctx.accounts.round;
 
-    // Single-Asset: validate by market type, take the price from the oracle
     if matches!(round.market_type, MarketType::SingleAsset) {
-        // Expect at least 1 remaining account as the price feed account (e.g. Pyth)
         require!(
             !ctx.remaining_accounts.is_empty(),
             GoldRushError::InvalidRemainingAccountsLength

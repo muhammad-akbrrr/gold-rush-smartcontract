@@ -125,6 +125,9 @@ pub enum GoldRushError {
     #[msg("Asset start price is not set")]
     AssetStartPriceNotSet = 0x3012,
 
+    #[msg("Round has not captured all start price of the assets in the group")]
+    RoundNotCapturedStartPrice = 0x3013,
+
     // Betting Errors (0x4000 - 0x4999)
     #[msg("Bet amount is below minimum required")]
     BetBelowMinimum = 0x4000,

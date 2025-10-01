@@ -9,7 +9,7 @@ import { PythSolanaReceiver } from "@pythnetwork/pyth-solana-receiver";
 import { GOLD_PRICE_FEED_ID, SOL_PRICE_FEED_ID } from "./helpers/pyth";
 import { hex32ToBytes } from "./helpers/bytes";
 
-describe("startRoundSingleGroup", () => {
+describe("startRoundSingleRound", () => {
   const { provider, program } = getProviderAndProgram();
 
   let admin: Keypair;
