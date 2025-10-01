@@ -41,12 +41,24 @@ impl<'info> CaptureEndPrice<'info> {
         );
 
         require!(
-            matches!(self.round.market_type, MarketType::GroupBattle),
+            matches!(
+                self.round.status,
+                RoundStatus::Active | RoundStatus::PendingSettlement
+            ),
             GoldRushError::InvalidRoundStatus
         );
         require!(
-            matches!(self.round.status, RoundStatus::Scheduled),
-            GoldRushError::InvalidRoundStatus
+            self.round.market_type == MarketType::GroupBattle,
+            GoldRushError::InvalidRoundMarketType,
+        );
+        require!(
+            Clock::get()?.unix_timestamp >= self.round.end_time,
+            GoldRushError::RoundNotReadyForSettlement
+        );
+
+        require!(
+            self.group_asset.captured_end_price_assets < self.group_asset.total_assets,
+            GoldRushError::GroupAssetAlreadyCapturedEndPrice
         );
 
         Ok(())

@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::AccountDeserialize;
 
 #[derive(Accounts)]
-pub struct FinalizeGroups<'info> {
+pub struct FinalizeEndGroups<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
 
@@ -23,7 +23,7 @@ pub struct FinalizeGroups<'info> {
     pub system_program: Program<'info, System>,
 }
 
-impl<'info> FinalizeGroups<'info> {
+impl<'info> FinalizeEndGroups<'info> {
     pub fn validate(&self) -> Result<()> {
         require!(
             matches!(
@@ -39,19 +39,21 @@ impl<'info> FinalizeGroups<'info> {
         );
 
         require!(
-            matches!(
-                self.round.status,
-                RoundStatus::Active | RoundStatus::PendingSettlement
-            ),
+            self.round.status == RoundStatus::Active,
             GoldRushError::InvalidRoundStatus
         );
         require!(
             matches!(self.round.market_type, MarketType::GroupBattle),
-            GoldRushError::InvalidRoundStatus
+            GoldRushError::InvalidRoundMarketType
         );
         require!(
             Clock::get()?.unix_timestamp >= self.round.end_time,
             GoldRushError::RoundNotReadyForSettlement
+        );
+
+        require!(
+            self.round.captured_end_groups < self.round.total_groups,
+            GoldRushError::GroupAssetAlreadyCapturedEndPrice
         );
 
         // Only allow finalize once
@@ -64,7 +66,7 @@ impl<'info> FinalizeGroups<'info> {
     }
 }
 
-pub fn handler(ctx: Context<FinalizeGroups>) -> Result<()> {
+pub fn handler(ctx: Context<FinalizeEndGroups>) -> Result<()> {
     // validate
     ctx.accounts.validate()?;
 
@@ -124,7 +126,7 @@ pub fn handler(ctx: Context<FinalizeGroups>) -> Result<()> {
 
         // Ensure group is fully finalized and has avg
         require!(
-            group_asset.finalized_assets >= group_asset.total_assets,
+            group_asset.finalized_end_price_assets >= group_asset.total_assets,
             GoldRushError::SettlementFailed
         );
         let avg = group_asset

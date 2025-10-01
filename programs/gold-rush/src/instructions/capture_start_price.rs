@@ -41,12 +41,16 @@ impl<'info> CaptureStartPrice<'info> {
         );
 
         require!(
-            matches!(self.round.market_type, MarketType::GroupBattle),
+            self.round.status == RoundStatus::Scheduled,
             GoldRushError::InvalidRoundStatus
         );
         require!(
-            matches!(self.round.status, RoundStatus::Scheduled),
-            GoldRushError::InvalidRoundStatus
+            self.round.market_type == MarketType::GroupBattle,
+            GoldRushError::InvalidRoundMarketType,
+        );
+        require!(
+            Clock::get()?.unix_timestamp >= self.round.start_time,
+            GoldRushError::RoundNotReadyForStart
         );
 
         Ok(())

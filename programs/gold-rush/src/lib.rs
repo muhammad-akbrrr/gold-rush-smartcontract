@@ -120,6 +120,14 @@ pub mod gold_rush {
         capture_start_price::handler(ctx)
     }
 
+    pub fn finalize_start_group_asset(ctx: Context<FinalizeStartGroupAsset>) -> Result<()> {
+        finalize_start_group_asset::handler(ctx)
+    }
+
+    pub fn finalize_start_groups(ctx: Context<FinalizeStartGroups>) -> Result<()> {
+        finalize_start_groups::handler(ctx)
+    }
+
     pub fn start_round<'info>(ctx: Context<'_, '_, 'info, 'info, StartRound<'info>>) -> Result<()> {
         start_round::handler(ctx)
     }
@@ -136,12 +144,12 @@ pub mod gold_rush {
         capture_end_price::handler(ctx)
     }
 
-    pub fn finalize_group_asset(ctx: Context<FinalizeGroupAsset>) -> Result<()> {
-        finalize_group_asset::handler(ctx)
+    pub fn finalize_end_group_asset(ctx: Context<FinalizeEndGroupAsset>) -> Result<()> {
+        finalize_end_group_asset::handler(ctx)
     }
 
-    pub fn finalize_groups(ctx: Context<FinalizeGroups>) -> Result<()> {
-        finalize_groups::handler(ctx)
+    pub fn finalize_end_groups(ctx: Context<FinalizeEndGroups>) -> Result<()> {
+        finalize_end_groups::handler(ctx)
     }
 
     pub fn settle_single_round<'info>(

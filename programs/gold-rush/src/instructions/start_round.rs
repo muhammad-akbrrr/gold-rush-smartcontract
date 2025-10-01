@@ -42,8 +42,12 @@ impl<'info> StartRound<'info> {
 
         require!(
             Clock::get()?.unix_timestamp >= self.round.start_time,
-            GoldRushError::RoundNotReady
+            GoldRushError::RoundNotReadyForStart
         );
+
+        if matches!(self.round.market_type, MarketType::GroupBattle) {
+            //
+        }
 
         Ok(())
     }

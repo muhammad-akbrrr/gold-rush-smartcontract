@@ -95,8 +95,8 @@ pub enum GoldRushError {
     #[msg("Invalid round status for this action")]
     InvalidRoundStatus = 0x3002,
 
-    #[msg("Round is not ready to be activated yet")]
-    RoundNotReady = 0x3003,
+    #[msg("Round is not ready to be started yet")]
+    RoundNotReadyForStart = 0x3003,
 
     #[msg("Round is not in Active status")]
     RoundNotActive = 0x3004,
@@ -121,6 +121,9 @@ pub enum GoldRushError {
 
     #[msg("Invalid round market type")]
     InvalidRoundMarketType = 0x3011,
+
+    #[msg("Asset start price is not set")]
+    AssetStartPriceNotSet = 0x3012,
 
     // Betting Errors (0x4000 - 0x4999)
     #[msg("Bet amount is below minimum required")]
@@ -175,8 +178,17 @@ pub enum GoldRushError {
     #[msg("Bet status is Lost, cannot claim reward")]
     ClaimLosingBet = 0x5011,
 
-    #[msg("Group asset has already been finalized")]
-    GroupAssetAlreadyFinalized = 0x5012,
+    #[msg("Group asset has already been finalized start price")]
+    GroupAssetAlreadyFinalizedStartPrice = 0x5012,
+
+    #[msg("Group asset has already been finalized end price")]
+    GroupAssetAlreadyFinalizedEndPrice = 0x5013,
+
+    #[msg("Group asset has already been captured start price")]
+    GroupAssetAlreadyCapturedStartPrice = 0x5014,
+
+    #[msg("Group asset has already been captured end price")]
+    GroupAssetAlreadyCapturedEndPrice = 0x5015,
 
     // Account & Token Errors (0x6000 - 0x6999)
     #[msg("Invalid token account")]

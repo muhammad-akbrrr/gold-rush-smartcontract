@@ -27,7 +27,8 @@ pub struct Round {
     #[max_len(MAX_WINNER_GROUP_IDS)]
     pub winner_group_ids: Vec<u64>, // The IDs of the groups that won the round.
     pub total_groups: u64,   // The total number of groups created in this round.
-    pub started_group_assets: u64, // The total number of group assets already captured the start price.
+    pub captured_start_groups: u64, // The total number of group assets already captured the start price.
+    pub captured_end_groups: u64, // The total number of group assets already captured the end price.
 
     // --- Metadata ---
     pub created_at: i64,         // The timestamp when the round was created.

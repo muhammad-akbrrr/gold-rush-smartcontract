@@ -29,7 +29,6 @@ pub enum RoundStatus {
     Active,            // Currently accepting bets
     Cancelling,        // Ongoing cancellation
     PendingSettlement, // Ended but settlement failed, needs retry
-    Settling,          // Ongoing settlement
     Ended,             // Successfully settled
 }
 

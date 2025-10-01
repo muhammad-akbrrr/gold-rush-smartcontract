@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::AccountDeserialize;
 
 #[derive(Accounts)]
-pub struct FinalizeGroupAsset<'info> {
+pub struct FinalizeEndGroupAsset<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
 
@@ -29,7 +29,7 @@ pub struct FinalizeGroupAsset<'info> {
     pub system_program: Program<'info, System>,
 }
 
-impl<'info> FinalizeGroupAsset<'info> {
+impl<'info> FinalizeEndGroupAsset<'info> {
     pub fn validate(&self) -> Result<()> {
         require!(
             matches!(
@@ -45,15 +45,12 @@ impl<'info> FinalizeGroupAsset<'info> {
         );
 
         require!(
-            matches!(
-                self.round.status,
-                RoundStatus::Active | RoundStatus::PendingSettlement
-            ),
+            self.round.status == RoundStatus::Active,
             GoldRushError::InvalidRoundStatus
         );
         require!(
             matches!(self.round.market_type, MarketType::GroupBattle),
-            GoldRushError::InvalidRoundStatus
+            GoldRushError::InvalidRoundMarketType
         );
         require!(
             Clock::get()?.unix_timestamp >= self.round.end_time,
@@ -67,15 +64,15 @@ impl<'info> FinalizeGroupAsset<'info> {
         );
 
         require!(
-            self.group_asset.finalized_assets < self.group_asset.total_assets,
-            GoldRushError::GroupAssetAlreadyFinalized
+            self.group_asset.finalized_end_price_assets < self.group_asset.total_assets,
+            GoldRushError::GroupAssetAlreadyFinalizedEndPrice
         );
 
         Ok(())
     }
 }
 
-pub fn handler(ctx: Context<FinalizeGroupAsset>) -> Result<()> {
+pub fn handler(ctx: Context<FinalizeEndGroupAsset>) -> Result<()> {
     // validate
     ctx.accounts.validate()?;
 
@@ -171,18 +168,18 @@ pub fn handler(ctx: Context<FinalizeGroupAsset>) -> Result<()> {
             .total_growth_rate_bps
             .checked_add(growth_rate_bps)
             .ok_or(GoldRushError::Overflow)?;
-        group_asset.finalized_assets = group_asset
-            .finalized_assets
+        group_asset.finalized_end_price_assets = group_asset
+            .finalized_end_price_assets
             .checked_add(1)
             .ok_or(GoldRushError::Overflow)?;
     }
 
     // Set group asset fields
-    if group_asset.finalized_assets >= group_asset.total_assets {
+    if group_asset.finalized_end_price_assets >= group_asset.total_assets {
         group_asset.avg_growth_rate_bps = Some(
             group_asset
                 .total_growth_rate_bps
-                .checked_div(group_asset.finalized_assets as i64)
+                .checked_div(group_asset.finalized_end_price_assets as i64)
                 .ok_or(GoldRushError::Overflow)?,
         );
     }

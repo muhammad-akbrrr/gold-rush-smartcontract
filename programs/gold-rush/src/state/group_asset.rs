@@ -12,9 +12,12 @@ pub struct GroupAsset {
     pub total_assets: u64,
     pub total_final_price: u64,
     pub total_growth_rate_bps: i64,
-    pub settled_assets: u64,
+    pub captured_start_price_assets: u64,
+    pub captured_end_price_assets: u64,
     pub avg_growth_rate_bps: Option<i64>,
-    pub finalized_assets: u64,
+    pub finalized_start_price_assets: u64,
+    pub finalized_end_price_assets: u64,
+    pub settled_assets: u64,
 
     // --- Metadata ---
     pub created_at: i64,
