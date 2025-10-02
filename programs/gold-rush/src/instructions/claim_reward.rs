@@ -105,10 +105,12 @@ pub fn handler(ctx: Context<ClaimReward>) -> Result<()> {
 
     // calculate reward
     let reward_amount = match bet.status {
-        BetStatus::Won => bet
-            .weight
-            .checked_mul(round.total_reward_pool)
-            .and_then(|x| x.checked_div(round.winners_weight))
+        BetStatus::Won => (bet.weight as u128)
+            .checked_mul(round.total_reward_pool as u128)
+            .and_then(|intermediate_result| {
+                intermediate_result.checked_div(round.winners_weight as u128)
+            })
+            .map(|final_result| final_result as u64)
             .ok_or(GoldRushError::Underflow)?,
         BetStatus::Draw => bet.amount,
         BetStatus::Pending => return Err(GoldRushError::ClaimPendingBet.into()),

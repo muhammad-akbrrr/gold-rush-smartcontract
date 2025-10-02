@@ -222,15 +222,14 @@ flowchart TD
     B --> C{Now >= start_time?}
     C -- No --> B1[Wait N minutes] --> B
     C -- Yes --> D{market_type?}
-    D -- GroupBattle --> E1[Capture Start Prices - parallel]
-    E1 --> F1[Start Round]
+    D -- GroupBattle --> E1[Capture Start Prices - parallel] --> E1a[Finalize Start Group - per group] --> E1b[Finalize Start Groups for Round] --> F1[Start Round]
     D -- SingleAsset --> E2[Fetch Start Price]
     E2 --> F1
     F1 --> G[Fetch Active/Pending Rounds]
     G --> H{Now >= end_time?}
     H -- No --> G1[Wait N minutes] --> G
     H -- Yes --> I{market_type?}
-    I -- GroupBattle --> J1[Capture End Prices - parallel] --> K1[Finalize Group - per group] --> L1[Finalize Groups for Round] --> M1[Settle Bets - batched]
+    I -- GroupBattle --> J1[Capture End Prices - parallel] --> K1[Finalize End Group - per group] --> L1[Finalize End Groups for Round] --> M1[Settle Bets - batched]
     I -- SingleAsset --> J2[Fetch Final Price] --> M1
     M1 --> N[Round Ended]
 ```
@@ -1376,6 +1375,52 @@ For each pair `(asset, pyth)`:
 
 ---
 
+### Keeper: Finalize Start Group Asset
+Checks whether `start_price` is set and saves its status to `GroupAsset`.
+
+#### Context
+| Account | Type | Description |
+|--------|------|-------------|
+| `signer` | `Signer` | Authorized keeper |
+| `config` | `Account<Config>` | Global configuration |
+| `round` | `Account<Round>` (PDA) | Target round |
+| `group_asset` | `Account<GroupAsset>` (PDA, mut) | Group to finalize |
+| `system_program` | `Program<System>` | System program |
+
+#### Remaining Accounts
+- First account: `asset` (writeable) - the assets for the group asset in context.
+- Next N account: `price_feed_account` (readonly) — teh pyth price account for asset on first account used to fetch the final price.
+
+#### Arguments
+_None_
+
+#### Logic
+1. Check that `group_asset.finalized_start_price_assets` must be greater than `group_asset.total_assets`.
+
+---
+
+### Keeper: Finalize Start Groups for Round
+Checks whether all `assets` in the round group have a `start_price`.
+
+#### Context
+| Account | Type | Description |
+|--------|------|-------------|
+| `signer` | `Signer` | Authorized keeper |
+| `config` | `Account<Config>` | Global configuration |
+| `round` | `Account<Round>` (PDA, mut) | Target round |
+
+#### Remaining Accounts
+- `group_asset` (readonly) — the group asset in the round.
+
+#### Arguments
+_None_
+
+#### Logic
+1. Read `avg_growth_rate_bps` of each group and determine max value.
+2. Set `round.winner_group_ids` to all group IDs with the max average (allow multiple winners for ties).
+
+---
+
 ### Keeper: Capture End Price (Group Battle)
 Batch-captures end prices and computes per-asset growth.
 
@@ -1408,7 +1453,7 @@ For each pair `(asset, pyth)`:
 
 ---
 
-### Keeper: Finalize Group Asset
+### Keeper: Finalize End Group Asset
 Aggregates asset-level results into `GroupAsset`.
 
 #### Context
@@ -1435,7 +1480,7 @@ _None_
 
 ---
 
-### Keeper: Finalize Groups for Round
+### Keeper: Finalize End Groups for Round
 Determines `winner_group_ids` for the round.
 
 #### Context

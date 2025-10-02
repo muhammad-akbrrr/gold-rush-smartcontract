@@ -13,32 +13,30 @@ pub fn calculate_direction_factor(
                 return Ok(default_direction_factor_bps);
             }
 
-            let abs_percent = percent.checked_abs().ok_or(GoldRushError::Overflow)? as u64;
+            let abs_percent_bps = percent.checked_abs().ok_or(GoldRushError::Overflow)? as u64;
 
             match market_type {
                 MarketType::SingleAsset => {
-                    let square = abs_percent
-                        .checked_mul(abs_percent)
+                    let square = (abs_percent_bps as u128)
+                        .checked_mul(abs_percent_bps as u128)
                         .ok_or(GoldRushError::Overflow)?;
 
-                    let scaled = square.checked_mul(100).ok_or(GoldRushError::Overflow)?;
-
-                    let factor_bps = (HUNDRED_PERCENT_BPS as u64)
-                        .checked_add(scaled)
+                    let bonus_bps = square
+                        .checked_div(BPS_SCALING_FACTOR as u128)
                         .ok_or(GoldRushError::Overflow)?;
 
-                    return Ok(factor_bps);
+                    (default_direction_factor_bps as u128)
+                        .checked_add(bonus_bps)
+                        .ok_or(GoldRushError::Overflow)?
+                        .try_into() // Convert u128 back to u64
+                        .map_err(|_| GoldRushError::Overflow.into())
                 }
                 MarketType::GroupBattle => {
-                    let scaled = abs_percent
-                        .checked_mul(100)
+                    let result = default_direction_factor_bps
+                        .checked_add(abs_percent_bps)
                         .ok_or(GoldRushError::Overflow)?;
 
-                    let factor_bps = (HUNDRED_PERCENT_BPS as u64)
-                        .checked_add(scaled)
-                        .ok_or(GoldRushError::Overflow)?;
-
-                    return Ok(factor_bps);
+                    Ok(result)
                 }
             }
         }
@@ -51,7 +49,7 @@ mod tests {
 
     #[test]
     fn test_up_down_direction() {
-        let default = 1_000;
+        let default = HUNDRED_PERCENT_BPS as u64; // 10000 = 100% = 1.0x
 
         assert_eq!(
             calculate_direction_factor(&MarketType::SingleAsset, &BetDirection::Up, default)
@@ -67,7 +65,7 @@ mod tests {
 
     #[test]
     fn test_percentage_change_zero() {
-        let default = 1_000;
+        let default = HUNDRED_PERCENT_BPS as u64;
         assert_eq!(
             calculate_direction_factor(
                 &MarketType::SingleAsset,
@@ -81,53 +79,61 @@ mod tests {
 
     #[test]
     fn test_gold_percentage_change_positive() {
-        let default = 1_000;
+        let default = HUNDRED_PERCENT_BPS as u64; // 10000
 
+        // Input: 500 bps = 5%
+        // Formula: 10000 + (500^2 / 10000) = 10000 + 2500 = 12500 (1.25x)
         let result = calculate_direction_factor(
             &MarketType::SingleAsset,
-            &BetDirection::PercentageChangeBps(5),
+            &BetDirection::PercentageChangeBps(500), // 5% = 500 bps
             default,
         )
         .unwrap();
-        assert_eq!(result, HUNDRED_PERCENT_BPS as u64 + 25 * 100);
+        assert_eq!(result, 12_500); // 1.25x
     }
 
     #[test]
     fn test_gold_percentage_change_negative() {
-        let default = 1_000;
+        let default = HUNDRED_PERCENT_BPS as u64;
 
+        // Input: -300 bps = -3%
+        // Formula: 10000 + (300^2 / 10000) = 10000 + 900 = 10900 (1.09x)
         let result = calculate_direction_factor(
             &MarketType::SingleAsset,
-            &BetDirection::PercentageChangeBps(-3),
+            &BetDirection::PercentageChangeBps(-300), // -3% = -300 bps
             default,
         )
         .unwrap();
-        assert_eq!(result, HUNDRED_PERCENT_BPS as u64 + 9 * 100)
+        assert_eq!(result, 10_900); // 1.09x
     }
 
     #[test]
     fn test_stock_percentage_change_positive() {
-        let default = 1_000;
+        let default = HUNDRED_PERCENT_BPS as u64;
 
+        // Input: 400 bps = 4%
+        // Formula: 10000 + 400 = 10400 (1.04x)
         let result = calculate_direction_factor(
             &MarketType::GroupBattle,
-            &BetDirection::PercentageChangeBps(4),
+            &BetDirection::PercentageChangeBps(400), // 4% = 400 bps
             default,
         )
         .unwrap();
-        assert_eq!(result, HUNDRED_PERCENT_BPS as u64 + 400);
+        assert_eq!(result, 10_400); // 1.04x
     }
 
     #[test]
     fn test_stock_percentage_change_negative() {
-        let default = 1_000;
+        let default = HUNDRED_PERCENT_BPS as u64;
 
+        // Input: -200 bps = -2%
+        // Formula: 10000 + 200 = 10200 (1.02x)
         let result = calculate_direction_factor(
             &MarketType::GroupBattle,
-            &BetDirection::PercentageChangeBps(-2),
+            &BetDirection::PercentageChangeBps(-200), // -2% = -200 bps
             default,
         )
         .unwrap();
-        assert_eq!(result, HUNDRED_PERCENT_BPS as u64 + 200);
+        assert_eq!(result, 10_200); // 1.02x
     }
 }

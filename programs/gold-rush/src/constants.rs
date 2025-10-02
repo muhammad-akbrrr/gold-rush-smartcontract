@@ -63,6 +63,7 @@ pub const DISRIMINATOR_SIZE: u8 = 8;
 
 /// Maths
 pub const HUNDRED_PERCENT_BPS: u16 = 10_000;
+pub const BPS_SCALING_FACTOR: u16 = 100;
 
 /// Limits
 pub const MAX_KEEPER_AUTHORITIES: usize = 5;

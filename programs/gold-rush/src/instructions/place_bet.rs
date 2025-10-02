@@ -137,20 +137,23 @@ pub fn handler(ctx: Context<PlaceBet>, amount: u64, direction: BetDirection) -> 
         config.default_direction_factor_bps as u64,
     )?;
     let time_factor = calculate_time_factor(
+        &round.market_type,
         time_elapsed,
         config.min_time_factor_bps as u64,
         config.max_time_factor_bps as u64,
         round_duration,
     )?;
-    let weight = amount
-        .checked_mul(direction_factor)
+    let numerator = (amount as u128)
+        .checked_mul(direction_factor as u128)
         .ok_or(GoldRushError::Overflow)?
-        .checked_mul(time_factor)
-        .ok_or(GoldRushError::Overflow)?
-        .checked_div(HUNDRED_PERCENT_BPS as u64)
-        .ok_or(GoldRushError::Underflow)?
-        .checked_div(HUNDRED_PERCENT_BPS as u64)
-        .ok_or(GoldRushError::Underflow)?;
+        .checked_mul(time_factor as u128)
+        .ok_or(GoldRushError::Overflow)?;
+    let denominator = (HUNDRED_PERCENT_BPS as u128)
+        .checked_mul(HUNDRED_PERCENT_BPS as u128)
+        .ok_or(GoldRushError::Overflow)?;
+    let weight = numerator
+        .checked_div(denominator)
+        .ok_or(GoldRushError::Underflow)? as u64;
 
     // set bet fields
     bet.id = round.total_bets + 1;

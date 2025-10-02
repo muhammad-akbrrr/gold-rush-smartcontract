@@ -3,7 +3,6 @@ import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import { airdropMany, getProviderAndProgram } from "./helpers/env";
 import { createAta, createMintToken, mintAmount } from "./helpers/token";
 import {
-  deriveBetPda,
   deriveConfigPda,
   deriveGroupAssetPda,
   deriveAssetPda,

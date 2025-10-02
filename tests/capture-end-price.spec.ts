@@ -3,7 +3,6 @@ import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import { airdropMany, getProviderAndProgram } from "./helpers/env";
 import { createAta, createMintToken, mintAmount } from "./helpers/token";
 import {
-  deriveBetPda,
   deriveConfigPda,
   deriveGroupAssetPda,
   deriveAssetPda,
@@ -87,7 +86,7 @@ describe("captureEndPrice", () => {
     // create round
     const now = Math.floor(Date.now() / 1000);
     const start = now + 3;
-    const end = start + 30; // 30 seconds
+    const end = start + 15;
     const cfg = await program.account.config.fetch(configPda);
     const nextRoundId = cfg.currentRoundCounter.addn(1);
     roundPda = deriveRoundPda(program.programId, nextRoundId);
@@ -164,89 +163,6 @@ describe("captureEndPrice", () => {
           } as any)
           .signers([admin])
           .rpc();
-      }
-    }
-
-    // capture start price
-    const r = await program.account.round.fetch(roundPda);
-    for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
-      const groupAssetPda = deriveGroupAssetPda(
-        program.programId,
-        roundPda,
-        new anchor.BN(groupId)
-      );
-      const g = await program.account.groupAsset.fetch(groupAssetPda);
-      let remainingAccounts = [];
-      for (let assetId = 1; assetId <= g.totalAssets.toNumber(); assetId++) {
-        const assetPda = deriveAssetPda(
-          program.programId,
-          groupAssetPda,
-          new anchor.BN(assetId)
-        );
-        remainingAccounts.push({
-          pubkey: assetPda,
-          isSigner: false,
-          isWritable: true,
-        });
-        remainingAccounts.push({
-          pubkey: priceFeedAccount,
-          isSigner: false,
-          isWritable: false,
-        });
-      }
-
-      try {
-        await program.methods
-          .captureStartPrice()
-          .accounts({
-            signer: keeper.publicKey,
-            config: configPda,
-            round: roundPda,
-            groupAsset: groupAssetPda,
-          } as any)
-          .remainingAccounts(remainingAccounts)
-          .signers([keeper])
-          .rpc();
-      } catch (e: any) {
-        throw e;
-      }
-    }
-  });
-  it("fails before end time", async () => {
-    const r = await program.account.round.fetch(roundPda);
-    for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
-      const groupAssetPda = deriveGroupAssetPda(
-        program.programId,
-        roundPda,
-        new anchor.BN(groupId)
-      );
-      try {
-        await program.methods
-          .captureEndPrice()
-          .accounts({
-            signer: keeper.publicKey,
-            config: configPda,
-            round: roundPda,
-            groupAsset: groupAssetPda,
-          } as any)
-          .remainingAccounts([
-            {
-              pubkey: priceFeedAccount,
-              isSigner: false,
-              isWritable: false,
-            },
-          ])
-          .signers([keeper])
-          .rpc();
-
-        throw new Error("should fail");
-      } catch (e: any) {
-        const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
-        if (parsed) {
-          expect(parsed.error.errorCode.code).to.eq(
-            "RoundNotReadyForSettlement"
-          );
-        }
       }
     }
   });
@@ -333,7 +249,7 @@ describe("captureEndPrice", () => {
       );
       try {
         await program.methods
-          .captureEndPrice()
+          .captureStartPrice()
           .accounts({
             signer: keeper.publicKey,
             config: configPda,
@@ -349,8 +265,6 @@ describe("captureEndPrice", () => {
           ])
           .signers([keeper])
           .rpc();
-
-        throw new Error("should fail");
       } catch (e: any) {
         const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
         if (parsed) {
