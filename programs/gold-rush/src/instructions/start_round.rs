@@ -20,6 +20,9 @@ pub struct StartRound<'info> {
     )]
     pub round: Account<'info, Round>,
 
+    // Optional: only required for SingleAsset rounds
+    pub price_update: Option<Account<'info, PriceUpdateV2>>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -45,6 +48,14 @@ impl<'info> StartRound<'info> {
             GoldRushError::RoundNotReadyForStart
         );
 
+        // if SingleAsset, price_update is required
+        if matches!(self.round.market_type, MarketType::SingleAsset) {
+            require!(
+                self.price_update.is_some(),
+                GoldRushError::InvalidPriceUpdateAccountData
+            );
+        }
+
         if matches!(self.round.market_type, MarketType::GroupBattle) {
             require!(
                 self.round.captured_start_groups >= self.round.total_groups,
@@ -64,13 +75,11 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, StartRound<'info>>) -> 
     let round = &mut ctx.accounts.round;
 
     if matches!(round.market_type, MarketType::SingleAsset) {
-        require!(
-            !ctx.remaining_accounts.is_empty(),
-            GoldRushError::InvalidRemainingAccountsLength
-        );
-
-        let price_update: Account<PriceUpdateV2> = Account::try_from(&ctx.remaining_accounts[0])
-            .map_err(|_| GoldRushError::InvalidPriceUpdateAccountData)?;
+        let price_update = ctx
+            .accounts
+            .price_update
+            .as_ref()
+            .ok_or(GoldRushError::InvalidPriceUpdateAccountData)?;
         let price = price_update
             .get_price_no_older_than(
                 &Clock::get()?,

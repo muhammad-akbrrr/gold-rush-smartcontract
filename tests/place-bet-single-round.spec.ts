@@ -11,7 +11,7 @@ import {
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { expect } from "chai";
 import { PythSolanaReceiver } from "@pythnetwork/pyth-solana-receiver";
-import { GOLD_PRICE_FEED_ID, SOL_PRICE_FEED_ID } from "./helpers/pyth";
+import { GOLD_PRICE_FEED_ID } from "./helpers/pyth";
 import { hex32ToBytes } from "./helpers/bytes";
 
 describe("placeBetSingleRound", () => {
@@ -114,7 +114,7 @@ describe("placeBetSingleRound", () => {
 
     const priceFeedAccount = pythSolanaReceiver.getPriceFeedAccountAddress(
       0,
-      SOL_PRICE_FEED_ID
+      GOLD_PRICE_FEED_ID
     );
 
     const maxWaitMs = 20000;
@@ -130,22 +130,16 @@ describe("placeBetSingleRound", () => {
             signer: keeper.publicKey,
             config: configPda,
             round: roundPda,
+            priceUpdate: priceFeedAccount,
             systemProgram: SystemProgram.programId,
           } as any)
-          .remainingAccounts([
-            {
-              pubkey: priceFeedAccount,
-              isSigner: false,
-              isWritable: true,
-            },
-          ])
           .signers([keeper])
           .rpc();
         break;
       } catch (e: any) {
         const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
         const code = parsed?.error?.errorCode?.code;
-        if (code === "RoundNotReady") {
+        if (code === "RoundNotReadyForStart") {
           if (Date.now() - startWait > maxWaitMs) {
             throw new Error("Timed out waiting for round to be ready");
           }

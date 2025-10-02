@@ -6,7 +6,7 @@ import { deriveConfigPda, deriveRoundPda, deriveVaultPda } from "./helpers/pda";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { expect } from "chai";
 import { PythSolanaReceiver } from "@pythnetwork/pyth-solana-receiver";
-import { GOLD_PRICE_FEED_ID, SOL_PRICE_FEED_ID } from "./helpers/pyth";
+import { GOLD_PRICE_FEED_ID } from "./helpers/pyth";
 import { hex32ToBytes } from "./helpers/bytes";
 
 describe("startRoundSingleRound", () => {
@@ -97,7 +97,7 @@ describe("startRoundSingleRound", () => {
 
     priceFeedAccount = pythSolanaReceiver.getPriceFeedAccountAddress(
       0,
-      SOL_PRICE_FEED_ID
+      GOLD_PRICE_FEED_ID
     );
   });
 
@@ -109,21 +109,15 @@ describe("startRoundSingleRound", () => {
           signer: keeper.publicKey,
           config: configPda,
           round: roundPda,
+          priceFeedAccount: priceFeedAccount,
           systemProgram: SystemProgram.programId,
         } as any)
-        .remainingAccounts([
-          {
-            pubkey: priceFeedAccount,
-            isSigner: false,
-            isWritable: true,
-          },
-        ])
         .signers([keeper])
         .rpc();
     } catch (e: any) {
       const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
       if (parsed) {
-        expect(parsed.error.errorCode.code).to.eq("RoundNotReady");
+        expect(parsed.error.errorCode.code).to.eq("RoundNotReadyForStart");
       }
     }
   });
@@ -140,22 +134,16 @@ describe("startRoundSingleRound", () => {
             signer: keeper.publicKey,
             config: configPda,
             round: roundPda,
+            priceFeedAccount: priceFeedAccount,
             systemProgram: SystemProgram.programId,
           } as any)
-          .remainingAccounts([
-            {
-              pubkey: priceFeedAccount,
-              isSigner: false,
-              isWritable: true,
-            },
-          ])
           .signers([keeper])
           .rpc();
         break;
       } catch (e: any) {
         const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
         const code = parsed?.error?.errorCode?.code;
-        if (code === "RoundNotReady") {
+        if (code === "RoundNotReadyForStart") {
           if (Date.now() - startWait > maxWaitMs) {
             throw new Error("Timed out waiting for round to be ready");
           }
@@ -182,15 +170,9 @@ describe("startRoundSingleRound", () => {
           signer: unauthorizedSigner.publicKey,
           config: configPda,
           round: roundPda,
+          priceFeedAccount: priceFeedAccount,
           systemProgram: SystemProgram.programId,
         } as any)
-        .remainingAccounts([
-          {
-            pubkey: priceFeedAccount,
-            isSigner: false,
-            isWritable: true,
-          },
-        ])
         .signers([unauthorizedSigner])
         .rpc();
     } catch (e: any) {

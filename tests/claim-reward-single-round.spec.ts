@@ -137,22 +137,16 @@ describe("claimRewardSingleRound", () => {
             signer: keeper.publicKey,
             config: configPda,
             round: roundPda,
+            priceUpdate: priceFeedAccount,
             systemProgram: SystemProgram.programId,
           } as any)
-          .remainingAccounts([
-            {
-              pubkey: priceFeedAccount,
-              isSigner: false,
-              isWritable: true,
-            },
-          ])
           .signers([keeper])
           .rpc();
         break;
       } catch (e: any) {
         const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
         const code = parsed?.error?.errorCode?.code;
-        if (code === "RoundNotReady") {
+        if (code === "RoundNotReadyForStart") {
           if (Date.now() - startWaitStartRound > maxWaitStartRoundMs) {
             throw new Error("Timed out waiting for round to be ready");
           }
