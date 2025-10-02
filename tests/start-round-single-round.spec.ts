@@ -109,7 +109,7 @@ describe("startRoundSingleRound", () => {
           signer: keeper.publicKey,
           config: configPda,
           round: roundPda,
-          priceFeedAccount: priceFeedAccount,
+          priceUpdate: priceFeedAccount,
           systemProgram: SystemProgram.programId,
         } as any)
         .signers([keeper])
@@ -134,7 +134,7 @@ describe("startRoundSingleRound", () => {
             signer: keeper.publicKey,
             config: configPda,
             round: roundPda,
-            priceFeedAccount: priceFeedAccount,
+            priceUpdate: priceFeedAccount,
             systemProgram: SystemProgram.programId,
           } as any)
           .signers([keeper])
@@ -170,7 +170,7 @@ describe("startRoundSingleRound", () => {
           signer: unauthorizedSigner.publicKey,
           config: configPda,
           round: roundPda,
-          priceFeedAccount: priceFeedAccount,
+          priceUpdate: priceFeedAccount,
           systemProgram: SystemProgram.programId,
         } as any)
         .signers([unauthorizedSigner])

@@ -53,6 +53,11 @@ impl<'info> CaptureStartPrice<'info> {
             GoldRushError::RoundNotReadyForStart
         );
 
+        require!(
+            self.group_asset.captured_start_price_assets < self.group_asset.total_assets,
+            GoldRushError::GroupAssetAlreadyCapturedStartPrice
+        );
+
         Ok(())
     }
 }

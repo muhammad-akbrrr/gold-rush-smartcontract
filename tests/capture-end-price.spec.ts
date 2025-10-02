@@ -1,7 +1,7 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import { airdropMany, getProviderAndProgram } from "./helpers/env";
-import { createAta, createMintToken, mintAmount } from "./helpers/token";
+import { createAta, createMintToken } from "./helpers/token";
 import {
   deriveConfigPda,
   deriveGroupAssetPda,
@@ -86,7 +86,7 @@ describe("captureEndPrice", () => {
     // create round
     const now = Math.floor(Date.now() / 1000);
     const start = now + 3;
-    const end = start + 15;
+    const end = start + 30; // 30 seconds
     const cfg = await program.account.config.fetch(configPda);
     const nextRoundId = cfg.currentRoundCounter.addn(1);
     roundPda = deriveRoundPda(program.programId, nextRoundId);
@@ -165,10 +165,9 @@ describe("captureEndPrice", () => {
           .rpc();
       }
     }
-  });
 
-  it("happy path with multiple assets (paired remaining accounts)", async () => {
-    const r = await program.account.round.fetch(roundPda);
+    // capture start price
+    let r = await program.account.round.fetch(roundPda);
     for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
       const groupAssetPda = deriveGroupAssetPda(
         program.programId,
@@ -212,6 +211,218 @@ describe("captureEndPrice", () => {
       }
     }
 
+    // finalize start group assets
+    r = await program.account.round.fetch(roundPda);
+    for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
+      const groupAssetPda = deriveGroupAssetPda(
+        program.programId,
+        roundPda,
+        new anchor.BN(groupId)
+      );
+      const g = await program.account.groupAsset.fetch(groupAssetPda);
+      let remainingAccounts = [];
+      for (let assetId = 1; assetId <= g.totalAssets.toNumber(); assetId++) {
+        const assetPda = deriveAssetPda(
+          program.programId,
+          groupAssetPda,
+          new anchor.BN(assetId)
+        );
+        remainingAccounts.push({
+          pubkey: assetPda,
+          isSigner: false,
+          isWritable: true,
+        });
+      }
+      await program.methods
+        .finalizeStartGroupAsset()
+        .accounts({
+          signer: keeper.publicKey,
+          config: configPda,
+          round: roundPda,
+          groupAsset: groupAssetPda,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .remainingAccounts(remainingAccounts)
+        .signers([keeper])
+        .rpc();
+    }
+
+    // finalize start groups
+    r = await program.account.round.fetch(roundPda);
+    let remainingAccounts = [];
+    for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
+      const groupAssetPda = deriveGroupAssetPda(
+        program.programId,
+        roundPda,
+        new anchor.BN(groupId)
+      );
+      remainingAccounts.push({
+        pubkey: groupAssetPda,
+        isSigner: false,
+        isWritable: false,
+      });
+    }
+
+    try {
+      await program.methods
+        .finalizeStartGroups()
+        .accounts({
+          signer: keeper.publicKey,
+          config: configPda,
+          round: roundPda,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .remainingAccounts(remainingAccounts)
+        .signers([keeper])
+        .rpc();
+    } catch (e: any) {
+      throw e;
+    }
+
+    // start round
+    const maxWaitMs = 20_000;
+    const pollIntervalMs = 500;
+    const startWait = Date.now();
+    while (true) {
+      try {
+        await program.methods
+          .startRound()
+          .accounts({
+            signer: keeper.publicKey,
+            config: configPda,
+            round: roundPda,
+            priceUpdate: null,
+            systemProgram: SystemProgram.programId,
+          } as any)
+          .signers([keeper])
+          .rpc();
+        break;
+      } catch (e: any) {
+        const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
+        const code = parsed?.error?.errorCode?.code;
+        if (code === "RoundNotReadyForStart") {
+          if (Date.now() - startWait > maxWaitMs) {
+            throw new Error("Timed out waiting for round to be ready");
+          }
+          await new Promise((r) => setTimeout(r, pollIntervalMs));
+          continue;
+        }
+        throw e;
+      }
+    }
+  });
+
+  it("fails before end time", async () => {
+    let r = await program.account.round.fetch(roundPda);
+    for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
+      const groupAssetPda = deriveGroupAssetPda(
+        program.programId,
+        roundPda,
+        new anchor.BN(groupId)
+      );
+      const g = await program.account.groupAsset.fetch(groupAssetPda);
+      let remainingAccounts = [];
+      for (let assetId = 1; assetId <= g.totalAssets.toNumber(); assetId++) {
+        const assetPda = deriveAssetPda(
+          program.programId,
+          groupAssetPda,
+          new anchor.BN(assetId)
+        );
+        remainingAccounts.push({
+          pubkey: assetPda,
+          isSigner: false,
+          isWritable: true,
+        });
+        remainingAccounts.push({
+          pubkey: priceFeedAccount,
+          isSigner: false,
+          isWritable: false,
+        });
+      }
+
+      try {
+        await program.methods
+          .captureEndPrice()
+          .accounts({
+            signer: keeper.publicKey,
+            config: configPda,
+            round: roundPda,
+            groupAsset: groupAssetPda,
+          } as any)
+          .remainingAccounts(remainingAccounts)
+          .signers([keeper])
+          .rpc();
+      } catch (e: any) {
+        const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
+        if (parsed) {
+          expect(parsed.error.errorCode.code).to.eq(
+            "RoundNotReadyForSettlement"
+          );
+        }
+      }
+    }
+  });
+
+  it("happy path", async () => {
+    let r = await program.account.round.fetch(roundPda);
+    for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
+      const groupAssetPda = deriveGroupAssetPda(
+        program.programId,
+        roundPda,
+        new anchor.BN(groupId)
+      );
+      const g = await program.account.groupAsset.fetch(groupAssetPda);
+      let remainingAccounts = [];
+      for (let assetId = 1; assetId <= g.totalAssets.toNumber(); assetId++) {
+        const assetPda = deriveAssetPda(
+          program.programId,
+          groupAssetPda,
+          new anchor.BN(assetId)
+        );
+        remainingAccounts.push({
+          pubkey: assetPda,
+          isSigner: false,
+          isWritable: true,
+        });
+        remainingAccounts.push({
+          pubkey: priceFeedAccount,
+          isSigner: false,
+          isWritable: false,
+        });
+      }
+
+      const maxWaitMs = 30_000; // 30 seconds
+      const pollIntervalMs = 500;
+      const startWait = Date.now();
+      while (true) {
+        try {
+          await program.methods
+            .captureEndPrice()
+            .accounts({
+              signer: keeper.publicKey,
+              config: configPda,
+              round: roundPda,
+              groupAsset: groupAssetPda,
+            } as any)
+            .remainingAccounts(remainingAccounts)
+            .signers([keeper])
+            .rpc();
+          break;
+        } catch (e: any) {
+          const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
+          const code = parsed?.error?.errorCode?.code;
+          if (code === "RoundNotReadyForSettlement") {
+            if (Date.now() - startWait > maxWaitMs) {
+              throw new Error("Timed out waiting for round to be ready");
+            }
+            await new Promise((r) => setTimeout(r, pollIntervalMs));
+            continue;
+          }
+          throw e;
+        }
+      }
+    }
+
     const round = await program.account.round.fetch(roundPda);
     for (let groupId = 1; groupId <= round.totalGroups.toNumber(); groupId++) {
       const groupAssetPda = deriveGroupAssetPda(
@@ -220,7 +431,7 @@ describe("captureEndPrice", () => {
         new anchor.BN(groupId)
       );
       const group = await program.account.groupAsset.fetch(groupAssetPda);
-      expect(group.startPriceAt).to.not.be.null;
+      expect(group.finalizedPriceAt).to.not.be.null;
 
       for (
         let assetId = 1;
@@ -234,44 +445,30 @@ describe("captureEndPrice", () => {
         );
 
         const asset = await program.account.asset.fetch(assetPda);
-        expect(asset.startPrice).to.not.be.null;
+        expect(asset.finalPrice).to.not.be.null;
       }
     }
   });
 
-  it("fails invalid remaining accounts length", async () => {
-    const r = await program.account.round.fetch(roundPda);
-    for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
-      const groupAssetPda = deriveGroupAssetPda(
-        program.programId,
-        roundPda,
-        new anchor.BN(groupId)
-      );
-      try {
-        await program.methods
-          .captureStartPrice()
-          .accounts({
-            signer: keeper.publicKey,
-            config: configPda,
-            round: roundPda,
-            groupAsset: groupAssetPda,
-          } as any)
-          .remainingAccounts([
-            {
-              pubkey: priceFeedAccount,
-              isSigner: false,
-              isWritable: false,
-            },
-          ])
-          .signers([keeper])
-          .rpc();
-      } catch (e: any) {
-        const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
-        if (parsed) {
-          expect(parsed.error.errorCode.code).to.eq(
-            "InvalidRemainingAccountsLength"
-          );
-        }
+  it("fails unauthorized keeper", async () => {
+    try {
+      await program.methods
+        .startRound()
+        .accounts({
+          signer: user.publicKey,
+          config: configPda,
+          round: roundPda,
+          priceUpdate: null,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .signers([user])
+        .rpc();
+
+      throw new Error("should fail");
+    } catch (e: any) {
+      const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
+      if (parsed) {
+        expect(parsed.error.errorCode.code).to.eq("UnauthorizedKeeper");
       }
     }
   });

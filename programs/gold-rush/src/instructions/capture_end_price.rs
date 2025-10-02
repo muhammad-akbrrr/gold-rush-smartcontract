@@ -82,7 +82,7 @@ pub fn handler(ctx: Context<CaptureEndPrice>) -> Result<()> {
     );
 
     let config = &ctx.accounts.config;
-    let round = &ctx.accounts.round;
+    let round = &mut ctx.accounts.round;
     let group_asset = &mut ctx.accounts.group_asset;
 
     // if finalized price is not set, set it to current timestamp

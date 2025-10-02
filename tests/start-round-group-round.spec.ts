@@ -292,7 +292,7 @@ describe("startRoundGroupRound", () => {
             signer: keeper.publicKey,
             config: configPda,
             round: roundPda,
-            priceFeedAccount: null,
+            priceUpdate: null,
             systemProgram: SystemProgram.programId,
           } as any)
           .signers([keeper])
@@ -327,7 +327,7 @@ describe("startRoundGroupRound", () => {
           signer: user.publicKey,
           config: configPda,
           round: roundPda,
-          priceFeedAccount: null,
+          priceUpdate: null,
           systemProgram: SystemProgram.programId,
         } as any)
         .signers([user])
