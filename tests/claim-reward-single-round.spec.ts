@@ -197,6 +197,7 @@ describe("claimRewardSingleRound", () => {
             config: configPda,
             round: roundPda,
             roundVault: vaultPda,
+            priceUpdate: priceFeedAccount,
             treasury: treasury.publicKey,
             treasuryTokenAccount: treasuryTokenAccount,
             mint: tokenMint,
@@ -205,11 +206,6 @@ describe("claimRewardSingleRound", () => {
             systemProgram: SystemProgram.programId,
           } as any)
           .remainingAccounts([
-            {
-              pubkey: priceFeedAccount,
-              isSigner: false,
-              isWritable: false,
-            },
             {
               pubkey: betPda,
               isSigner: false,
@@ -317,8 +313,6 @@ describe("claimRewardSingleRound", () => {
       if (parsed) {
         expect(parsed.error.errorCode.code).to.eq("AlreadyClaimed");
       }
-
-      throw e;
     }
   });
 });
