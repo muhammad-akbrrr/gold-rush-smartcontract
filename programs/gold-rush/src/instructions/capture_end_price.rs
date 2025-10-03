@@ -41,10 +41,12 @@ impl<'info> CaptureEndPrice<'info> {
         );
 
         require!(
-            matches!(
-                self.round.status,
-                RoundStatus::Active | RoundStatus::PendingSettlement
-            ),
+            self.config.keeper_authorities.contains(&self.signer.key()),
+            GoldRushError::UnauthorizedKeeper
+        );
+
+        require!(
+            self.round.status == RoundStatus::Active,
             GoldRushError::InvalidRoundStatus
         );
         require!(

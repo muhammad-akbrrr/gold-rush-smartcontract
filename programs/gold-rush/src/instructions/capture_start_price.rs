@@ -41,6 +41,11 @@ impl<'info> CaptureStartPrice<'info> {
         );
 
         require!(
+            self.config.keeper_authorities.contains(&self.signer.key()),
+            GoldRushError::UnauthorizedKeeper
+        );
+
+        require!(
             self.round.status == RoundStatus::Scheduled,
             GoldRushError::InvalidRoundStatus
         );
