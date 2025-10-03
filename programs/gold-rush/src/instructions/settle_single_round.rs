@@ -32,6 +32,9 @@ pub struct SettleSingleRound<'info> {
     )]
     pub round_vault: Account<'info, TokenAccount>,
 
+    /// CHECK: This is the price feed account
+    pub price_update: Account<'info, PriceUpdateV2>,
+
     /// CHECK: Treasury pubkey from config
     pub treasury: UncheckedAccount<'info>,
 
@@ -69,9 +72,8 @@ impl<'info> SettleSingleRound<'info> {
 
         require!(
             matches!(self.round.market_type, MarketType::SingleAsset),
-            GoldRushError::InvalidRoundStatus
+            GoldRushError::InvalidRoundMarketType
         );
-
         require!(
             matches!(
                 self.round.status,
@@ -79,10 +81,13 @@ impl<'info> SettleSingleRound<'info> {
             ),
             GoldRushError::InvalidRoundStatus
         );
-
         require!(
             Clock::get()?.unix_timestamp >= self.round.end_time,
             GoldRushError::RoundNotReadyForSettlement
+        );
+        require!(
+            self.round.settled_bets < self.round.total_bets,
+            GoldRushError::AllBetsAlreadySettled
         );
 
         require!(
@@ -105,21 +110,14 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleSingleRound<'info
 
     let config = &ctx.accounts.config;
     let round = &mut ctx.accounts.round;
+    let price_update = &ctx.accounts.price_update;
 
     let now = Clock::get()?;
 
-    // If final price already set, skip reading Pyth. Otherwise, expect the first
-    // remaining account to be the Pyth PriceUpdateV2 account.
-    let (final_price, first_bet_index): (u64, usize) = if let Some(fp) = round.final_price {
-        (fp, 0)
+    // If final price already set, skip reading Pyth
+    let final_price: u64 = if let Some(fp) = round.final_price {
+        fp
     } else {
-        require!(
-            !ctx.remaining_accounts.is_empty(),
-            GoldRushError::InvalidRemainingAccountsLength
-        );
-
-        let price_update: Account<PriceUpdateV2> = Account::try_from(&ctx.remaining_accounts[0])
-            .map_err(|_| GoldRushError::InvalidPriceUpdateAccountData)?;
         let price = price_update
             .get_price_no_older_than(
                 &now,
@@ -130,16 +128,8 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleSingleRound<'info
 
         let fp = normalize_price_to_u64(price.price, price.exponent)?;
         require!(fp > 0, GoldRushError::InvalidAssetPrice);
-        (fp, 1)
+        fp
     };
-
-    // If we still have bets to settle, ensure at least one bet account is provided
-    if round.settled_bets < round.total_bets {
-        require!(
-            ctx.remaining_accounts.len() > first_bet_index,
-            GoldRushError::InvalidRemainingAccountsLength
-        );
-    }
 
     // If no bets, end quickly
     if round.total_bets == 0 {
@@ -201,7 +191,7 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleSingleRound<'info
 
     // Iterate over Bet PDAs in remaining accounts (batched)
     let mut batch_winners_weight = 0u64;
-    for acc_info in ctx.remaining_accounts.iter().skip(first_bet_index) {
+    for acc_info in ctx.remaining_accounts.iter() {
         // Ownership must be our program (Bet PDA)
         require_keys_eq!(
             *acc_info.owner,
@@ -264,7 +254,7 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleSingleRound<'info
         .ok_or(GoldRushError::Overflow)?;
     round.settled_bets = round
         .settled_bets
-        .checked_add((ctx.remaining_accounts.len().saturating_sub(1)) as u64)
+        .checked_add((ctx.remaining_accounts.len()) as u64)
         .ok_or(GoldRushError::Overflow)?;
 
     // Finalize when all bets processed

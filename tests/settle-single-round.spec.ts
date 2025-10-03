@@ -196,6 +196,7 @@ describe("settleSingleRound", () => {
           config: configPda,
           round: roundPda,
           roundVault: vaultPda,
+          priceUpdate: priceFeedAccount,
           treasury: treasury.publicKey,
           treasuryTokenAccount: treasuryTokenAccount,
           mint: tokenMint,
@@ -203,13 +204,6 @@ describe("settleSingleRound", () => {
           associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
         } as any)
-        .remainingAccounts([
-          {
-            pubkey: priceFeedAccount,
-            isSigner: false,
-            isWritable: true,
-          },
-        ])
         .signers([keeper])
         .rpc();
 
@@ -235,6 +229,7 @@ describe("settleSingleRound", () => {
             config: configPda,
             round: roundPda,
             roundVault: vaultPda,
+            priceUpdate: priceFeedAccount,
             treasury: treasury.publicKey,
             treasuryTokenAccount: treasuryTokenAccount,
             mint: tokenMint,
@@ -243,11 +238,6 @@ describe("settleSingleRound", () => {
             systemProgram: SystemProgram.programId,
           } as any)
           .remainingAccounts([
-            {
-              pubkey: priceFeedAccount,
-              isSigner: false,
-              isWritable: false,
-            },
             {
               pubkey: betPda,
               isSigner: false,

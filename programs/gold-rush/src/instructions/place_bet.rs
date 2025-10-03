@@ -75,11 +75,11 @@ impl<'info> PlaceBet<'info> {
             let ga = self
                 .group_asset
                 .as_ref()
-                .ok_or(GoldRushError::InvalidAssetAccount)?;
+                .ok_or(GoldRushError::InvalidGroupAssetAccount)?;
             require_keys_eq!(
                 ga.round,
                 self.round.key(),
-                GoldRushError::InvalidAssetAccount
+                GoldRushError::InvalidGroupAssetAccount
             );
         }
 

@@ -1,13 +1,14 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import { airdropMany, getProviderAndProgram } from "./helpers/env";
-import { createAta, createMintToken } from "./helpers/token";
+import { createAta, createMintToken, mintAmount } from "./helpers/token";
 import {
   deriveConfigPda,
   deriveGroupAssetPda,
   deriveAssetPda,
   deriveRoundPda,
   deriveVaultPda,
+  deriveBetPda,
 } from "./helpers/pda";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { expect } from "chai";
@@ -28,6 +29,7 @@ describe("placeBetGroupRound", () => {
   let configPda: PublicKey;
   let roundPda: PublicKey;
   let vaultPda: PublicKey;
+  let userTokenAccount: PublicKey;
 
   before(async () => {
     admin = (provider.wallet as any).payer as Keypair;
@@ -46,6 +48,18 @@ describe("placeBetGroupRound", () => {
     const { mint } = await createMintToken(provider.connection, admin, 9);
     tokenMint = mint;
     await createAta(provider.connection, mint, admin);
+
+    // create ata
+    userTokenAccount = await createAta(provider.connection, mint, user);
+
+    // mint amount
+    await mintAmount(
+      provider.connection,
+      admin,
+      tokenMint,
+      userTokenAccount,
+      100_000_000
+    );
 
     // create price feed account
     const pythSolanaReceiver = new PythSolanaReceiver({
@@ -278,123 +292,212 @@ describe("placeBetGroupRound", () => {
     } catch (e: any) {
       throw e;
     }
-  });
 
-  it("fails invalid group asset account", async () => {
-    const r = await program.account.round.fetch(roundPda);
-    for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
-      const groupAssetPda = deriveGroupAssetPda(
-        program.programId,
-        roundPda,
-        new anchor.BN(groupId)
-      );
+    // start round
+    const maxWaitMs = 20_000;
+    const pollIntervalMs = 500;
+    const startWait = Date.now();
+    while (true) {
       try {
         await program.methods
-          .finalizeStartGroups()
+          .startRound()
           .accounts({
             signer: keeper.publicKey,
             config: configPda,
             round: roundPda,
-            groupAsset: groupAssetPda,
+            priceUpdate: null,
+            systemProgram: SystemProgram.programId,
           } as any)
-          .remainingAccounts([
-            {
-              pubkey: priceFeedAccount,
-              isSigner: false,
-              isWritable: false,
-            },
-          ])
           .signers([keeper])
           .rpc();
-
-        throw new Error("should fail");
+        break;
       } catch (e: any) {
         const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
-        if (parsed) {
-          expect(parsed.error.errorCode.code).to.eq("InvalidGroupAssetAccount");
+        const code = parsed?.error?.errorCode?.code;
+        if (code === "RoundNotReadyForStart") {
+          if (Date.now() - startWait > maxWaitMs) {
+            throw new Error("Timed out waiting for round to be ready");
+          }
+          await new Promise((r) => setTimeout(r, pollIntervalMs));
+          continue;
         }
+        throw e;
       }
     }
   });
 
-  it("happy path", async () => {
+  it("happy path up", async () => {
+    const amount = new anchor.BN(10_000_000); // 10 GRT
+    const direction = { up: {} };
     const r = await program.account.round.fetch(roundPda);
-    let remainingAccounts = [];
+    const nextBetId = r.totalBets.addn(1);
+    const betPda = deriveBetPda(program.programId, roundPda, nextBetId);
+    let groupAssetPda: PublicKey;
     for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
-      const groupAssetPda = deriveGroupAssetPda(
+      groupAssetPda = deriveGroupAssetPda(
         program.programId,
         roundPda,
         new anchor.BN(groupId)
       );
-      const g = await program.account.groupAsset.fetch(groupAssetPda);
-      remainingAccounts.push({
-        pubkey: groupAssetPda,
-        isSigner: false,
-        isWritable: false,
-      });
+      break;
     }
 
     try {
       await program.methods
-        .finalizeStartGroups()
+        .placeBet(amount, direction)
         .accounts({
-          signer: keeper.publicKey,
+          signer: user.publicKey,
           config: configPda,
           round: roundPda,
+          groupAsset: groupAssetPda,
+          bet: betPda,
+          vault: vaultPda,
+          tokenAccount: userTokenAccount,
+          mint: tokenMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
         } as any)
-        .remainingAccounts(remainingAccounts)
-        .signers([keeper])
+        .signers([user])
         .rpc();
     } catch (e: any) {
       throw e;
     }
-
     const round = await program.account.round.fetch(roundPda);
-    expect(round.capturedStartGroups.toNumber()).to.eq(
-      round.totalGroups.toNumber()
-    );
-    for (let groupId = 1; groupId <= round.totalGroups.toNumber(); groupId++) {
-      const groupAssetPda = deriveGroupAssetPda(
-        program.programId,
-        roundPda,
-        new anchor.BN(groupId)
-      );
-      const group = await program.account.groupAsset.fetch(groupAssetPda);
-      expect(group.finalizedStartPriceAssets.toNumber()).to.eq(
-        group.totalAssets.toNumber()
-      );
-    }
+    const bet = await program.account.bet.fetch(betPda);
+    expect(round.totalBets.toString()).to.eq(bet.id.toString());
+    expect(bet.status).to.deep.equal({ pending: {} });
+    expect(bet.amount.toNumber()).to.eq(amount.toNumber());
+    expect(bet.direction).to.deep.equal(direction);
   });
 
-  it("fails all group assets in round already captured start price", async () => {
+  it("happy path down", async () => {
+    const amount = new anchor.BN(10_000_000); // 10 GRT
+    const direction = { down: {} };
     const r = await program.account.round.fetch(roundPda);
+    const nextBetId = r.totalBets.addn(1);
+    const betPda = deriveBetPda(program.programId, roundPda, nextBetId);
+    let groupAssetPda: PublicKey;
     for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
-      const groupAssetPda = deriveGroupAssetPda(
+      groupAssetPda = deriveGroupAssetPda(
         program.programId,
         roundPda,
         new anchor.BN(groupId)
       );
-      try {
-        await program.methods
-          .finalizeStartGroups()
-          .accounts({
-            signer: keeper.publicKey,
-            config: configPda,
-            round: roundPda,
-            groupAsset: groupAssetPda,
-          } as any)
-          .signers([keeper])
-          .rpc();
+      break;
+    }
 
-        throw new Error("should fail");
-      } catch (e: any) {
-        const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
-        if (parsed) {
-          expect(parsed.error.errorCode.code).to.eq(
-            "RoundAlreadyCapturedStartPrice"
-          );
-        }
+    try {
+      await program.methods
+        .placeBet(amount, direction)
+        .accounts({
+          signer: user.publicKey,
+          config: configPda,
+          round: roundPda,
+          groupAsset: groupAssetPda,
+          bet: betPda,
+          vault: vaultPda,
+          tokenAccount: userTokenAccount,
+          mint: tokenMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .signers([user])
+        .rpc();
+    } catch (e: any) {
+      throw e;
+    }
+    const round = await program.account.round.fetch(roundPda);
+    const bet = await program.account.bet.fetch(betPda);
+    expect(round.totalBets.toString()).to.eq(bet.id.toString());
+    expect(bet.status).to.deep.equal({ pending: {} });
+    expect(bet.amount.toNumber()).to.eq(amount.toNumber());
+    expect(bet.direction).to.deep.equal(direction);
+  });
+
+  it("happy path percentage", async () => {
+    const amount = new anchor.BN(10_000_000); // 10 GRT
+    const direction = { percentageChangeBps: { 0: 10 } };
+    const r = await program.account.round.fetch(roundPda);
+    const nextBetId = r.totalBets.addn(1);
+    const betPda = deriveBetPda(program.programId, roundPda, nextBetId);
+    let groupAssetPda: PublicKey;
+    for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
+      groupAssetPda = deriveGroupAssetPda(
+        program.programId,
+        roundPda,
+        new anchor.BN(groupId)
+      );
+      break;
+    }
+
+    try {
+      await program.methods
+        .placeBet(amount, direction)
+        .accounts({
+          signer: user.publicKey,
+          config: configPda,
+          round: roundPda,
+          groupAsset: groupAssetPda,
+          bet: betPda,
+          vault: vaultPda,
+          tokenAccount: userTokenAccount,
+          mint: tokenMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .signers([user])
+        .rpc();
+    } catch (e: any) {
+      throw e;
+    }
+    const round = await program.account.round.fetch(roundPda);
+    const bet = await program.account.bet.fetch(betPda);
+    expect(round.totalBets.toString()).to.eq(bet.id.toString());
+    expect(bet.status).to.deep.equal({ pending: {} });
+    expect(bet.amount.toNumber()).to.eq(amount.toNumber());
+    expect(bet.direction).to.deep.equal(direction);
+  });
+
+  it("fails below min amount", async () => {
+    const cfg = await program.account.config.fetch(configPda);
+    const amount = cfg.minBetAmount.subn(1);
+    const direction = { up: {} };
+    const r = await program.account.round.fetch(roundPda);
+    const nextBetId = r.totalBets.addn(1);
+    const betPda = deriveBetPda(program.programId, roundPda, nextBetId);
+    let groupAssetPda: PublicKey;
+    for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
+      groupAssetPda = deriveGroupAssetPda(
+        program.programId,
+        roundPda,
+        new anchor.BN(groupId)
+      );
+      break;
+    }
+
+    try {
+      await program.methods
+        .placeBet(amount, direction)
+        .accounts({
+          signer: user.publicKey,
+          config: configPda,
+          round: roundPda,
+          groupAsset: groupAssetPda,
+          bet: betPda,
+          vault: vaultPda,
+          tokenAccount: userTokenAccount,
+          mint: tokenMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .signers([user])
+        .rpc();
+
+      throw new Error("should fail");
+    } catch (e: any) {
+      const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
+      if (parsed) {
+        expect(parsed.error.errorCode.code).to.eq("BetBelowMinimum");
       }
     }
   });

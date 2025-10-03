@@ -202,6 +202,9 @@ pub enum GoldRushError {
     #[msg("Max winner group ids exceeded")]
     MaxWinnerGroupIdsExceeded = 0x5018,
 
+    #[msg("All bets have already been settled")]
+    AllBetsAlreadySettled = 0x5019,
+
     // Account & Token Errors (0x6000 - 0x6999)
     #[msg("Invalid token account")]
     InvalidTokenAccount = 0x6000,

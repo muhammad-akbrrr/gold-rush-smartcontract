@@ -5,7 +5,6 @@ use anchor_spl::{
     associated_token::AssociatedToken,
     token::{transfer, Mint, Token, TokenAccount, Transfer},
 };
-
 #[derive(Accounts)]
 pub struct SettleGroupRound<'info> {
     #[account(mut)]
@@ -68,9 +67,8 @@ impl<'info> SettleGroupRound<'info> {
 
         require!(
             matches!(self.round.market_type, MarketType::GroupBattle),
-            GoldRushError::InvalidRoundStatus
+            GoldRushError::InvalidRoundMarketType
         );
-
         require!(
             matches!(
                 self.round.status,
@@ -78,10 +76,13 @@ impl<'info> SettleGroupRound<'info> {
             ),
             GoldRushError::InvalidRoundStatus
         );
-
         require!(
             Clock::get()?.unix_timestamp >= self.round.end_time,
             GoldRushError::RoundNotReadyForSettlement
+        );
+        require!(
+            self.round.settled_bets < self.round.total_bets,
+            GoldRushError::AllBetsAlreadySettled
         );
 
         require!(
@@ -246,6 +247,7 @@ pub fn handler(ctx: Context<SettleGroupRound>) -> Result<()> {
         round.status = RoundStatus::Ended;
         round.settled_at = Some(Clock::get()?.unix_timestamp);
     } else if round.status == RoundStatus::Active {
+        // mark as pending to indicate partial settlement in progress
         round.status = RoundStatus::PendingSettlement;
     }
 

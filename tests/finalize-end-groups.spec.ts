@@ -1,13 +1,14 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import { airdropMany, getProviderAndProgram } from "./helpers/env";
-import { createAta, createMintToken } from "./helpers/token";
+import { createAta, createMintToken, mintAmount } from "./helpers/token";
 import {
   deriveConfigPda,
   deriveGroupAssetPda,
   deriveAssetPda,
   deriveRoundPda,
   deriveVaultPda,
+  deriveBetPda,
 } from "./helpers/pda";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { expect } from "chai";
@@ -35,6 +36,7 @@ describe("finalizeEndGroups", () => {
     keeper = Keypair.generate();
     user = Keypair.generate();
 
+    // airdrop SOL
     await airdropMany(provider.connection, [
       admin.publicKey,
       treasury.publicKey,
@@ -46,6 +48,23 @@ describe("finalizeEndGroups", () => {
     const { mint } = await createMintToken(provider.connection, admin, 9);
     tokenMint = mint;
     await createAta(provider.connection, mint, admin);
+
+    // create ata
+    let treasuryTokenAccount = await createAta(
+      provider.connection,
+      mint,
+      treasury
+    );
+    let userTokenAccount = await createAta(provider.connection, mint, user);
+
+    // mint amount
+    await mintAmount(
+      provider.connection,
+      admin,
+      tokenMint,
+      userTokenAccount,
+      100_000_000
+    );
 
     // create price feed account
     const pythSolanaReceiver = new PythSolanaReceiver({
@@ -309,6 +328,74 @@ describe("finalizeEndGroups", () => {
         }
         throw e;
       }
+    }
+
+    // place bet - down
+    r = await program.account.round.fetch(roundPda);
+    let nextBetId = r.totalBets.addn(1);
+    let betPda = deriveBetPda(program.programId, roundPda, nextBetId);
+    let groupAssetPda: PublicKey;
+    for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
+      groupAssetPda = deriveGroupAssetPda(
+        program.programId,
+        roundPda,
+        new anchor.BN(groupId)
+      );
+      break;
+    }
+    try {
+      await program.methods
+        .placeBet(new anchor.BN(10_000_000), { down: {} })
+        .accounts({
+          signer: user.publicKey,
+          config: configPda,
+          round: roundPda,
+          groupAsset: groupAssetPda,
+          bet: betPda,
+          vault: vaultPda,
+          tokenAccount: userTokenAccount,
+          mint: tokenMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .signers([user])
+        .rpc();
+    } catch (e: any) {
+      throw e;
+    }
+
+    // place bet - percentage
+    r = await program.account.round.fetch(roundPda);
+    nextBetId = r.totalBets.addn(1);
+    betPda = deriveBetPda(program.programId, roundPda, nextBetId);
+    for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
+      groupAssetPda = deriveGroupAssetPda(
+        program.programId,
+        roundPda,
+        new anchor.BN(groupId)
+      );
+      break;
+    }
+
+    try {
+      await program.methods
+        .placeBet(new anchor.BN(20_000_000), { percentageChangeBps: { 0: 10 } })
+        .accounts({
+          signer: user.publicKey,
+          config: configPda,
+          round: roundPda,
+          groupAsset: groupAssetPda,
+          bet: betPda,
+          vault: vaultPda,
+          tokenAccount: userTokenAccount,
+          mint: tokenMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .signers([user])
+        .rpc();
+    } catch (e: any) {
+      throw e;
     }
 
     // capture end price
