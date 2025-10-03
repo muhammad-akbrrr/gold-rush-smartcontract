@@ -15,7 +15,7 @@ import { PythSolanaReceiver } from "@pythnetwork/pyth-solana-receiver";
 import { GOLD_PRICE_FEED_ID } from "./helpers/pyth";
 import { hex32ToBytes, stringToBytes } from "./helpers/bytes";
 
-describe("finalizeEndGroupAsset", () => {
+describe("finalizeEndGroups", () => {
   const { provider, program } = getProviderAndProgram();
 
   let admin: Keypair;
@@ -369,47 +369,9 @@ describe("finalizeEndGroupAsset", () => {
         }
       }
     }
-  });
 
-  it("fails invalid asset account", async () => {
-    const r = await program.account.round.fetch(roundPda);
-    for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
-      const groupAssetPda = deriveGroupAssetPda(
-        program.programId,
-        roundPda,
-        new anchor.BN(groupId)
-      );
-      try {
-        await program.methods
-          .finalizeEndGroupAsset()
-          .accounts({
-            signer: keeper.publicKey,
-            config: configPda,
-            round: roundPda,
-            groupAsset: groupAssetPda,
-          } as any)
-          .remainingAccounts([
-            {
-              pubkey: priceFeedAccount,
-              isSigner: false,
-              isWritable: false,
-            },
-          ])
-          .signers([keeper])
-          .rpc();
-
-        throw new Error("should fail");
-      } catch (e: any) {
-        const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
-        if (parsed) {
-          expect(parsed.error.errorCode.code).to.eq("InvalidAssetAccount");
-        }
-      }
-    }
-  });
-
-  it("happy path", async () => {
-    const r = await program.account.round.fetch(roundPda);
+    // finalize end group asset
+    r = await program.account.round.fetch(roundPda);
     for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
       const groupAssetPda = deriveGroupAssetPda(
         program.programId,
@@ -448,23 +410,9 @@ describe("finalizeEndGroupAsset", () => {
         throw e;
       }
     }
-
-    const round = await program.account.round.fetch(roundPda);
-    for (let groupId = 1; groupId <= round.totalGroups.toNumber(); groupId++) {
-      const groupAssetPda = deriveGroupAssetPda(
-        program.programId,
-        roundPda,
-        new anchor.BN(groupId)
-      );
-      const group = await program.account.groupAsset.fetch(groupAssetPda);
-      expect(group.startPriceAt).to.not.be.null;
-      expect(group.finalizedEndPriceAssets.toNumber()).to.eq(
-        group.totalAssets.toNumber()
-      );
-    }
   });
 
-  it("fails group asset already captured end price", async () => {
+  it("fails invalid group asset account", async () => {
     const r = await program.account.round.fetch(roundPda);
     for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
       const groupAssetPda = deriveGroupAssetPda(
@@ -474,7 +422,7 @@ describe("finalizeEndGroupAsset", () => {
       );
       try {
         await program.methods
-          .finalizeEndGroupAsset()
+          .finalizeEndGroups()
           .accounts({
             signer: keeper.publicKey,
             config: configPda,
@@ -495,8 +443,87 @@ describe("finalizeEndGroupAsset", () => {
       } catch (e: any) {
         const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
         if (parsed) {
+          expect(parsed.error.errorCode.code).to.eq("InvalidGroupAssetAccount");
+        }
+      }
+    }
+  });
+
+  it("happy path", async () => {
+    const r = await program.account.round.fetch(roundPda);
+    let remainingAccounts = [];
+    for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
+      const groupAssetPda = deriveGroupAssetPda(
+        program.programId,
+        roundPda,
+        new anchor.BN(groupId)
+      );
+      remainingAccounts.push({
+        pubkey: groupAssetPda,
+        isSigner: false,
+        isWritable: false,
+      });
+    }
+
+    try {
+      await program.methods
+        .finalizeEndGroups()
+        .accounts({
+          signer: keeper.publicKey,
+          config: configPda,
+          round: roundPda,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .remainingAccounts(remainingAccounts)
+        .signers([keeper])
+        .rpc();
+    } catch (e: any) {
+      throw e;
+    }
+
+    const round = await program.account.round.fetch(roundPda);
+    expect(round.capturedEndGroups.toNumber()).to.eq(
+      round.totalGroups.toNumber()
+    );
+    for (let groupId = 1; groupId <= round.totalGroups.toNumber(); groupId++) {
+      const groupAssetPda = deriveGroupAssetPda(
+        program.programId,
+        roundPda,
+        new anchor.BN(groupId)
+      );
+      const group = await program.account.groupAsset.fetch(groupAssetPda);
+      expect(group.finalizedEndPriceAssets.toNumber()).to.eq(
+        group.totalAssets.toNumber()
+      );
+    }
+  });
+
+  it("fails all group assets in round already captured end price", async () => {
+    const r = await program.account.round.fetch(roundPda);
+    for (let groupId = 1; groupId <= r.totalGroups.toNumber(); groupId++) {
+      const groupAssetPda = deriveGroupAssetPda(
+        program.programId,
+        roundPda,
+        new anchor.BN(groupId)
+      );
+      try {
+        await program.methods
+          .finalizeEndGroups()
+          .accounts({
+            signer: keeper.publicKey,
+            config: configPda,
+            round: roundPda,
+            groupAsset: groupAssetPda,
+          } as any)
+          .signers([keeper])
+          .rpc();
+
+        throw new Error("should fail");
+      } catch (e: any) {
+        const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
+        if (parsed) {
           expect(parsed.error.errorCode.code).to.eq(
-            "GroupAssetAlreadyCapturedEndPrice"
+            "RoundAlreadyCapturedEndPrice"
           );
         }
       }

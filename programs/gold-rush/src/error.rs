@@ -193,11 +193,14 @@ pub enum GoldRushError {
     #[msg("Group asset is not fully captured end price")]
     GroupAssetNotFullyCapturedEndPrice = 0x5015,
 
-    #[msg("Group asset has already been finalized end price")]
-    GroupAssetAlreadyFinalizedEndPrice = 0x5016,
-
     #[msg("Group asset has already been captured end price")]
-    GroupAssetAlreadyCapturedEndPrice = 0x5017,
+    GroupAssetAlreadyCapturedEndPrice = 0x5016,
+
+    #[msg("Round has already been captured all end price of the assets in the group")]
+    RoundAlreadyCapturedEndPrice = 0x5017,
+
+    #[msg("Max winner group ids exceeded")]
+    MaxWinnerGroupIdsExceeded = 0x5018,
 
     // Account & Token Errors (0x6000 - 0x6999)
     #[msg("Invalid token account")]
@@ -231,6 +234,9 @@ pub enum GoldRushError {
     #[msg("Invalid price feed account")]
     InvalidPriceFeedAccount = 0x8003,
 
-    #[msg("Invalid group asset account data provided")]
+    #[msg("Invalid group asset account provided")]
     InvalidGroupAssetAccount = 0x8004,
+
+    #[msg("Invalid group asset account data provided")]
+    InvalidGroupAssetAccountData = 0x8005,
 }

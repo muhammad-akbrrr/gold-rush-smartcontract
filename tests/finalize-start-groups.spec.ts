@@ -294,7 +294,6 @@ describe("finalizeStartGroups", () => {
         roundPda,
         new anchor.BN(groupId)
       );
-      const g = await program.account.groupAsset.fetch(groupAssetPda);
       remainingAccounts.push({
         pubkey: groupAssetPda,
         isSigner: false,

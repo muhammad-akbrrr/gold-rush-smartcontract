@@ -50,7 +50,7 @@ impl<'info> FinalizeStartGroupAsset<'info> {
         );
         require!(
             self.round.market_type == MarketType::GroupBattle,
-            GoldRushError::InvalidRoundStatus
+            GoldRushError::InvalidRoundMarketType
         );
 
         require_keys_eq!(

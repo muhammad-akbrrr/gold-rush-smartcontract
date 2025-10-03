@@ -53,7 +53,7 @@ impl<'info> FinalizeEndGroups<'info> {
 
         require!(
             self.round.captured_end_groups < self.round.total_groups,
-            GoldRushError::GroupAssetAlreadyCapturedEndPrice
+            GoldRushError::RoundAlreadyCapturedEndPrice
         );
 
         // Only allow finalize once
@@ -92,14 +92,14 @@ pub fn handler(ctx: Context<FinalizeEndGroups>) -> Result<()> {
         require_keys_eq!(
             *acc_info.owner,
             *ctx.program_id,
-            GoldRushError::InvalidAssetAccount
+            GoldRushError::InvalidGroupAssetAccount
         );
 
         // Borrow and deserialize GroupAsset
         let data = acc_info.try_borrow_data()?;
         let mut slice: &[u8] = &data;
         let group_asset: GroupAsset = GroupAsset::try_deserialize(&mut slice)
-            .map_err(|_| GoldRushError::InvalidAssetAccountData)?;
+            .map_err(|_| GoldRushError::InvalidGroupAssetAccountData)?;
 
         // Validate expected GroupAsset PDA
         let expected_pda = Pubkey::find_program_address(
@@ -114,24 +114,22 @@ pub fn handler(ctx: Context<FinalizeEndGroups>) -> Result<()> {
         require_keys_eq!(
             *acc_info.key,
             expected_pda,
-            GoldRushError::InvalidAssetAccount
+            GoldRushError::InvalidGroupAssetAccount
         );
-
-        // Must belong to this round
         require_keys_eq!(
             group_asset.round,
             round.key(),
-            GoldRushError::InvalidAssetAccount
+            GoldRushError::InvalidGroupAssetAccount
         );
 
         // Ensure group is fully finalized and has avg
         require!(
             group_asset.finalized_end_price_assets >= group_asset.total_assets,
-            GoldRushError::SettlementFailed
+            GoldRushError::GroupAssetNotFullyCapturedEndPrice
         );
         let avg = group_asset
             .avg_growth_rate_bps
-            .ok_or(GoldRushError::SettlementFailed)?;
+            .ok_or(GoldRushError::GroupAssetNotFullyCapturedEndPrice)?;
 
         match max_avg {
             None => {
@@ -154,11 +152,15 @@ pub fn handler(ctx: Context<FinalizeEndGroups>) -> Result<()> {
     // winners not exceed limit
     require!(
         winner_ids.len() <= MAX_WINNER_GROUP_IDS,
-        GoldRushError::SettlementFailed
+        GoldRushError::MaxWinnerGroupIdsExceeded
     );
 
-    // Set winners on the round
+    // Set round fields
     round.winner_group_ids = winner_ids;
+    round.captured_end_groups = round
+        .captured_end_groups
+        .checked_add(ctx.remaining_accounts.len() as u64)
+        .ok_or(GoldRushError::Overflow)?;
 
     Ok(())
 }

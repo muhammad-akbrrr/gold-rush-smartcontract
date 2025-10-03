@@ -337,7 +337,7 @@ describe("finalizeStartGroupAsset", () => {
         const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
         if (parsed) {
           expect(parsed.error.errorCode.code).to.eq(
-            "GroupAssetAlreadyFinalizedStartPrice"
+            "GroupAssetAlreadyCapturedStartPrice"
           );
         }
       }

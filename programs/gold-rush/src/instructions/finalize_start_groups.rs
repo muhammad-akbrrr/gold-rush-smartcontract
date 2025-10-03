@@ -44,7 +44,7 @@ impl<'info> FinalizeStartGroups<'info> {
         );
         require!(
             self.round.market_type == MarketType::GroupBattle,
-            GoldRushError::InvalidRoundStatus
+            GoldRushError::InvalidRoundMarketType
         );
 
         require!(
@@ -71,9 +71,6 @@ pub fn handler(ctx: Context<FinalizeStartGroups>) -> Result<()> {
         remaining_accounts.len() <= MAX_REMAINING_ACCOUNTS,
         GoldRushError::InvalidRemainingAccountsLength
     );
-
-    // TODO: Check semua group asset apakah sudah captured start price
-    // kalau udah, update captured_start_groups di round
 
     let round = &mut ctx.accounts.round;
 
