@@ -22,7 +22,7 @@ async function deploy() {
   );
 
   const tokenMint = new PublicKey(
-    "EJwZgeZrdC8TXTQbQBoL6bfuAnFUUy1PVCMB4DYPzVaS"
+    "EJwZgeZrdC8TXTQbQBoL6bfuAnFUUy1PVCMB4DYPzVaS" // TODO: GRT token mint
   );
   const goldPriceFeedId = hex32ToBytes(
     "0x765d2ba906dbc32ca17cc11f5310a89e9ee1f6420508c63861f2f8ba4ee34bb2"

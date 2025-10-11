@@ -132,6 +132,7 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleSingleRound<'info
     };
 
     // If no bets, end quickly
+    // TODO: Validate settled_bets == total_bets
     if round.total_bets == 0 {
         round.status = RoundStatus::Ended;
         round.final_price = Some(final_price);
