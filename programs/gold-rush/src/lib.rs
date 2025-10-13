@@ -13,7 +13,7 @@ pub use constants::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("FM7SQyRJExhzjFYvZ6XZTLkSSjNcMdDkCq89PWF9FtMB");
+declare_id!("3Ut8a8pvtNBEXY3ukuQzXgHpADByembaMqeCrBiyiKXv");
 
 #[program]
 pub mod gold_rush {

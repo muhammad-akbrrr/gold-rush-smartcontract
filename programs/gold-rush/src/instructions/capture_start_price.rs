@@ -183,5 +183,12 @@ pub fn handler(ctx: Context<CaptureStartPrice>) -> Result<()> {
         }
         asset_data[8..8 + serialized.len()].copy_from_slice(&serialized);
     }
+
+    // Set group asset fields
+    group_asset.captured_start_price_assets = group_asset
+        .captured_start_price_assets
+        .checked_add((ctx.remaining_accounts.len() / 2) as u64)
+        .ok_or(GoldRushError::Overflow)?;
+
     Ok(())
 }

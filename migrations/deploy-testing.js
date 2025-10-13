@@ -1,13 +1,13 @@
 import anchorPkg from "@coral-xyz/anchor";
 const anchor = anchorPkg;
 const { BN } = anchor;
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, Transaction } from "@solana/web3.js";
 import fs from "fs";
 import os from "os";
 import {
-  createAssociatedTokenAccount,
+  getOrCreateAssociatedTokenAccount,
   createMint,
-  mintTo,
+  createMintToInstruction,
 } from "@solana/spl-token";
 
 async function deployTesting() {
@@ -19,37 +19,61 @@ async function deployTesting() {
   const program = anchor.workspace.GoldRush;
 
   // Prepare wallets
-  const admin = getKeypairFromFile("/.config/solana/localnet/1.json");
-  const keeper = getKeypairFromFile("/.config/solana/localnet/2.json");
-  const treasury = getKeypairFromFile("/.config/solana/localnet/3.json");
-  const user = getKeypairFromFile("/.config/solana/localnet/4.json");
+  const admin = getKeypairFromFile("wallets/1.json");
+  const keeper = getKeypairFromFile("wallets/1.json"); // Same as admin for simplicity
+  const treasury = getKeypairFromFile("wallets/1.json"); // Same as admin for simplicity
+  const user = getKeypairFromFile("wallets/2.json");
 
-  // Get airdrops
-  await airdropMany(provider.connection, [
-    admin.publicKey,
-    keeper.publicKey,
-    treasury.publicKey,
-    user.publicKey,
-  ]);
+  // if localnet, do airdrop
+  if (provider.connection.rpcEndpoint.includes("127.0.0.1")) {
+    await airdropMany(provider.connection, [
+      admin.publicKey,
+      keeper.publicKey,
+      treasury.publicKey,
+      user.publicKey,
+    ]);
+    return;
+  }
 
   // Create mint
   const { mint } = await createMintToken(provider.connection, admin, 9);
   console.log("Created mint:", mint.toString());
 
   // Create ata
-  const adminAta = await createAta(provider.connection, mint, admin);
-  const keeperAta = await createAta(provider.connection, mint, keeper);
-  const treasuryAta = await createAta(provider.connection, mint, treasury);
-  const userAta = await createAta(provider.connection, mint, user);
+  const adminAta = await getOrCreateAssociatedTokenAccount(
+    provider.connection,
+    admin, // payer
+    mint,
+    admin.publicKey // owner
+  );
+  const keeperAta = await getOrCreateAssociatedTokenAccount(
+    provider.connection,
+    keeper, // payer
+    mint,
+    keeper.publicKey // owner
+  );
+  const treasuryAta = await getOrCreateAssociatedTokenAccount(
+    provider.connection,
+    treasury, // payer
+    mint,
+    treasury.publicKey // owner
+  );
+  const userAta = await getOrCreateAssociatedTokenAccount(
+    provider.connection,
+    user, // payer
+    mint,
+    user.publicKey // owner
+  );
 
-  // Mint to ata
-  await Promise.all([
-    mintAmount(provider.connection, admin, mint, adminAta, 100_000_000),
-    mintAmount(provider.connection, admin, mint, keeperAta, 100_000_000),
-    mintAmount(provider.connection, admin, mint, treasuryAta, 100_000_000),
-    mintAmount(provider.connection, admin, mint, userAta, 100_000_000),
+  // Mint to ATAs in batch
+  await mintToAllATAsBatch(provider.connection, admin, mint, [
+    { ata: adminAta.address, amount: 100_000_000 },
+    { ata: keeperAta.address, amount: 100_000_000 },
+    { ata: treasuryAta.address, amount: 100_000_000 },
+    { ata: userAta.address, amount: 100_000_000 },
   ]);
 
+  // Initialize config
   const [configPda] = PublicKey.findProgramAddressSync(
     [Buffer.from("config")],
     program.programId
@@ -102,10 +126,35 @@ async function deployTesting() {
   }
 }
 
-deployTesting().catch(console.error);
+async function mintToAllATAsBatch(
+  connection,
+  mintAuthority,
+  mint,
+  destinations
+) {
+  console.log("Minting to all ATAs in batch...");
+
+  const transaction = new Transaction();
+
+  for (const dest of destinations) {
+    const instruction = createMintToInstruction(
+      mint, // mint
+      dest.ata, // destination
+      mintAuthority.publicKey, // authority
+      dest.amount // amount
+    );
+    transaction.add(instruction);
+  }
+
+  const signature = await connection.sendTransaction(transaction, [
+    mintAuthority,
+  ]);
+  await connection.confirmTransaction(signature);
+  console.log("All minting completed in batch:", signature);
+}
 
 function getKeypairFromFile(path) {
-  const file = fs.readFileSync(os.homedir() + path, "utf-8");
+  const file = fs.readFileSync(path, "utf-8");
   return anchor.web3.Keypair.fromSecretKey(Uint8Array.from(JSON.parse(file)));
 }
 
@@ -131,33 +180,6 @@ async function createMintToken(connection, payer, decimals = 9) {
   return { mint, mintAuthority };
 }
 
-async function createAta(connection, mint, owner) {
-  return await createAssociatedTokenAccount(
-    connection,
-    owner,
-    mint,
-    owner.publicKey
-  );
-}
-
-async function mintAmount(
-  connection,
-  mintAuthority,
-  mint,
-  destination,
-  amount
-) {
-  await mintTo(
-    connection,
-    mintAuthority,
-    mint,
-    destination,
-    mintAuthority.publicKey,
-    amount,
-    [mintAuthority]
-  );
-}
-
 function hex32ToBytes(hex) {
   const clean = hex.startsWith("0x") ? hex.slice(2) : hex;
   if (clean.length % 2 !== 0) throw new Error("Hex length must be even");
@@ -169,3 +191,5 @@ function hex32ToBytes(hex) {
   if (bytes.length !== 32) throw new Error("Must be exactly 32 bytes");
   return bytes;
 }
+
+deployTesting().catch(console.error);
