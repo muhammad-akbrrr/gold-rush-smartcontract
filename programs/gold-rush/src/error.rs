@@ -184,26 +184,32 @@ pub enum GoldRushError {
     #[msg("Group asset has already been captured all start price of the assets")]
     GroupAssetAlreadyCapturedStartPrice = 0x5012,
 
+    #[msg("Group asset has already been finalized start price of the assets")]
+    GroupAssetAlreadyFinalizedStartPrice = 0x5013,
+
     #[msg("Round has already been captured all start price of the assets in the group")]
-    RoundAlreadyCapturedStartPrice = 0x5013,
+    RoundAlreadyCapturedStartPrice = 0x5014,
 
     #[msg("Group asset is not fully captured start price")]
-    GroupAssetNotFullyCapturedStartPrice = 0x5014,
+    GroupAssetNotFullyCapturedStartPrice = 0x5015,
 
     #[msg("Group asset is not fully captured end price")]
-    GroupAssetNotFullyCapturedEndPrice = 0x5015,
+    GroupAssetNotFullyCapturedEndPrice = 0x5016,
 
     #[msg("Group asset has already been captured end price")]
-    GroupAssetAlreadyCapturedEndPrice = 0x5016,
+    GroupAssetAlreadyCapturedEndPrice = 0x5017,
+
+    #[msg("Group asset has already been finalized end price")]
+    GroupAssetAlreadyFinalizedEndPrice = 0x5018,
 
     #[msg("Round has already been captured all end price of the assets in the group")]
-    RoundAlreadyCapturedEndPrice = 0x5017,
+    RoundAlreadyCapturedEndPrice = 0x5019,
 
     #[msg("Max winner group ids exceeded")]
-    MaxWinnerGroupIdsExceeded = 0x5018,
+    MaxWinnerGroupIdsExceeded = 0x5020,
 
     #[msg("All bets have already been settled")]
-    AllBetsAlreadySettled = 0x5019,
+    AllBetsAlreadySettled = 0x5021,
 
     // Account & Token Errors (0x6000 - 0x6999)
     #[msg("Invalid token account")]

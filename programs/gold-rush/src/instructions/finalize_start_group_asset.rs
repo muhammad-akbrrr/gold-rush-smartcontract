@@ -61,7 +61,7 @@ impl<'info> FinalizeStartGroupAsset<'info> {
 
         require!(
             self.group_asset.finalized_start_price_assets < self.group_asset.total_assets,
-            GoldRushError::GroupAssetAlreadyCapturedStartPrice
+            GoldRushError::GroupAssetAlreadyFinalizedStartPrice
         );
 
         Ok(())
