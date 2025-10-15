@@ -16,7 +16,7 @@ pub const BET_SEED: &str = "bet";
 
 /// Enum for program status flags
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace)]
-pub enum ContractStatus {
+pub enum ProgramStatus {
     Active,
     Paused,
     EmergencyPaused,

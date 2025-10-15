@@ -17,7 +17,7 @@ pub struct EmergencyUnpause<'info> {
 impl<'info> EmergencyUnpause<'info> {
     pub fn validate(&self) -> Result<()> {
         require!(
-            self.config.status == ContractStatus::EmergencyPaused,
+            self.config.status == ProgramStatus::EmergencyPaused,
             GoldRushError::NotEmergencyPaused
         );
 
@@ -37,7 +37,7 @@ pub fn handler(ctx: Context<EmergencyUnpause>) -> Result<()> {
     let config = &mut ctx.accounts.config;
 
     // set fields
-    config.status = ContractStatus::Active;
+    config.status = ProgramStatus::Active;
 
     Ok(())
 }

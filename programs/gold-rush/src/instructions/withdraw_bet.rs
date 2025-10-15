@@ -49,7 +49,7 @@ pub struct WithdrawBet<'info> {
 impl<'info> WithdrawBet<'info> {
     pub fn validate(&self) -> Result<()> {
         require!(
-            self.config.status == ContractStatus::Active,
+            self.config.status == ProgramStatus::Active,
             GoldRushError::ProgramPaused
         );
 

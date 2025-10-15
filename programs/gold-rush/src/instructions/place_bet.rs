@@ -55,7 +55,7 @@ pub struct PlaceBet<'info> {
 impl<'info> PlaceBet<'info> {
     pub fn validate(&self, amount: u64) -> Result<()> {
         require!(
-            self.config.status == ContractStatus::Active,
+            self.config.status == ProgramStatus::Active,
             GoldRushError::ProgramPaused
         );
 

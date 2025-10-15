@@ -1,4 +1,4 @@
-use crate::{constants::*, error::GoldRushError, state::*};
+use crate::{constants::*, error::GoldRushError, events::*, state::*};
 use anchor_lang::prelude::*;
 
 #[derive(Accounts)]
@@ -17,7 +17,7 @@ pub struct PauseProgram<'info> {
 impl<'info> PauseProgram<'info> {
     pub fn validate(&self) -> Result<()> {
         require!(
-            self.config.status != ContractStatus::Paused,
+            self.config.status != ProgramStatus::Paused,
             GoldRushError::AlreadyPaused
         );
 
@@ -37,7 +37,13 @@ pub fn handler(ctx: Context<PauseProgram>) -> Result<()> {
     let config = &mut ctx.accounts.config;
 
     // set fields
-    config.status = ContractStatus::Paused;
+    config.status = ProgramStatus::Paused;
+
+    // emit event
+    emit!(ProgramPaused {
+        admin: ctx.accounts.signer.key(),
+        config: config.key(),
+    });
 
     Ok(())
 }

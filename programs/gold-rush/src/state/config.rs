@@ -29,7 +29,7 @@ pub struct Config {
     pub default_direction_factor_bps: u16, // The default direction factor in basis points.
 
     // --- Global State ---
-    pub status: ContractStatus, // Overall contract status (Active / Paused / EmergencyPaused)
+    pub status: ProgramStatus, // Overall contract status (Active / Paused / EmergencyPaused)
     pub current_round_counter: u64, // Incremental counter for new round IDs
 
     // --- Metadata ---

@@ -124,7 +124,7 @@ pub fn handler(
     config.min_time_factor_bps = min_time_factor_bps;
     config.max_time_factor_bps = max_time_factor_bps;
     config.default_direction_factor_bps = default_direction_factor_bps;
-    config.status = ContractStatus::Active;
+    config.status = ProgramStatus::Active;
     config.bump = ctx.bumps.config;
 
     Ok(())

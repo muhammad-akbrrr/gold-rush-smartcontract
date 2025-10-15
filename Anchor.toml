@@ -6,20 +6,20 @@ package_manager = "pnpm"
 resolution = true
 skip-lint = false
 
-[programs.devnet]
+[programs.localnet]
 gold_rush = "3Ut8a8pvtNBEXY3ukuQzXgHpADByembaMqeCrBiyiKXv"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
-wallet = "wallets/1.json"
+cluster = "localnet"
+wallet = "~/.config/solana/localnet/1.json"
 
 [scripts]
 deploy = "node migrations/deploy.js"
 deploy_testing = "node migrations/deploy-testing.js"
-test = "pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/create-round.spec.ts"
+test = "pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/pause-program.spec.ts"
 
 [test]
 startup_wait = 50000

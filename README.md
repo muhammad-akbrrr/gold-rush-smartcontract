@@ -367,7 +367,7 @@ pub struct Config {
   pub default_direction_factor_bps: u16, // Default direction factor in bps.
 
   // --- Global State ---
-  pub status: ContractStatus,          // Overall contract status (Active / Paused / EmergencyPaused)
+  pub status: ProgramStatus,          // Overall contract status (Active / Paused / EmergencyPaused)
   pub current_round_counter: u64,      // Incremental counter for new round IDs
 
   // --- Metadata ---
@@ -376,7 +376,7 @@ pub struct Config {
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
-pub enum ContractStatus {
+pub enum ProgramStatus {
     Active,
     Paused,
     EmergencyPaused,
@@ -845,9 +845,8 @@ _None_
    - `version = 1`
    - `bump = bump`
 
-#### Emits / Side Effects
-- Creates a new `Config` account at PDA `["config"]`
-- Stores global configuration and admin data
+#### Events
+_None_
 
 #### Errors
 | Code                   | Meaning                                    |
@@ -901,8 +900,8 @@ _None_
    - `fee_group_battle_bps = fee_group_battle_bps`
    - `min_bet_amount = min_bet_amount`
 
-#### Emits / Side Effects
-- Updates the `Config` account with new global settings
+#### Events
+_None_
 
 #### Errors
 | Code                      | Meaning                                      |
@@ -937,9 +936,8 @@ _None_
 1. Check that `admin.key() == config.admin`
 2. Set `config.status = Paused`
 
-#### Emits / Side Effects
-- Updates `Config.status` to `Paused`
-- Halts critical user actions (create round, place bet)
+#### Events
+- ProgramPaused — program paused successfully; Data: admin (Pubkey), config (Pubkey)
 
 #### Errors
 | Code             | Meaning                                            |

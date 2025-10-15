@@ -28,7 +28,7 @@ impl<'info> FinalizeEndGroups<'info> {
         require!(
             matches!(
                 self.config.status,
-                ContractStatus::Active | ContractStatus::EmergencyPaused,
+                ProgramStatus::Active | ProgramStatus::EmergencyPaused,
             ),
             GoldRushError::ProgramPaused
         );

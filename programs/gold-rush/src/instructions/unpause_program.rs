@@ -17,7 +17,7 @@ pub struct UnpauseProgram<'info> {
 impl<'info> UnpauseProgram<'info> {
     pub fn validate(&self) -> Result<()> {
         require!(
-            self.config.status == ContractStatus::Paused,
+            self.config.status == ProgramStatus::Paused,
             GoldRushError::AlreadyActive
         );
 
@@ -37,7 +37,7 @@ pub fn handler(ctx: Context<UnpauseProgram>) -> Result<()> {
     let config = &mut ctx.accounts.config;
 
     // set fields
-    config.status = ContractStatus::Active;
+    config.status = ProgramStatus::Active;
 
     Ok(())
 }
