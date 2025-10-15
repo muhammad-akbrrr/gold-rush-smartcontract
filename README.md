@@ -980,7 +980,7 @@ _None_
 | Code             | Meaning                                             |
 |-------------------|------------------------------------------------------|
 | `Unauthorized`      | If the caller is not the current `config.admin`       |
-| `AlreadyActive`     | If the config is already in `Active` state               |
+| `NotPaused`     | Program is not in `Paused` state               |
 
 ### Admin: Emergency Pause
 #### Purpose
@@ -1046,7 +1046,7 @@ _None_
 | Code             | Meaning                                            |
 |-------------------|-----------------------------------------------------|
 | `Unauthorized`      | Caller is not `config.admin`                        |
-| `AlreadyActive`     | Program is already in `Active` state                 |
+| `NotEmergencyPaused`     | Program is not in `EmergencyPaused` state                 |
 
 ### Admin: Insert GroupAsset
 Adds a new `GroupAsset` to a round. Used for Group Battle mode.
@@ -1840,7 +1840,7 @@ The following is a complete list of error codes used in the Gold Rush program:
 | 4098 | 0x1002 | `ProgramPaused` | Program is currently in paused status |
 | 4099 | 0x1003 | `EmergencyPaused` | Program is currently in emergency paused status |
 | 4100 | 0x1004 | `AlreadyPaused` | Program is already in paused status |
-| 4101 | 0x1005 | `AlreadyActive` | Program is already in active status |
+| 4101 | 0x1005 | `NotPaused` | Program is not in paused status |
 
 ### Configuration Errors (0x2000 - 0x2999)
 
@@ -1924,8 +1924,8 @@ pub enum GoldRushError {
     #[msg("Program is already paused")]
     AlreadyPaused = 0x1004,
     
-    #[msg("Program is already active")]
-    AlreadyActive = 0x1005,
+    #[msg("Program is not paused")]
+    NotPaused = 0x1005,
 
     // Configuration Errors (0x2000 - 0x2999)
     #[msg("Fee basis points must be less than 10000")]

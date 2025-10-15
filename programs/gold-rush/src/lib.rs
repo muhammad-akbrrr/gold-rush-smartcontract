@@ -84,8 +84,8 @@ pub mod gold_rush {
         program_pause::handler(ctx)
     }
 
-    pub fn unpause_program(ctx: Context<UnprogramPause>) -> Result<()> {
-        unpause_program::handler(ctx)
+    pub fn program_unpause(ctx: Context<ProgramUnpause>) -> Result<()> {
+        program_unpause::handler(ctx)
     }
 
     pub fn emergency_pause(ctx: Context<EmergencyPause>) -> Result<()> {

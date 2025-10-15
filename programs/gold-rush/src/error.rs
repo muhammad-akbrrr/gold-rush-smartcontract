@@ -73,8 +73,8 @@ pub enum GoldRushError {
     #[msg("Program is already paused")]
     AlreadyPaused = 0x2016,
 
-    #[msg("Program is already active")]
-    AlreadyActive = 0x2017,
+    #[msg("Program is not paused")]
+    NotPaused = 0x2017,
 
     #[msg("Program is already in emergency pause")]
     AlreadyEmergencyPaused = 0x2018,

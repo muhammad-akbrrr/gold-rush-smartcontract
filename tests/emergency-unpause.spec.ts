@@ -7,7 +7,7 @@ import { deriveConfigPda } from "./helpers/pda";
 import { hex32ToBytes } from "./helpers/bytes";
 import { GOLD_PRICE_FEED_ID } from "./helpers/pyth";
 
-describe("unprogramPause", () => {
+describe("emergencyUnpause", () => {
   const { provider, program } = getProviderAndProgram();
 
   let admin: Keypair;
@@ -56,10 +56,10 @@ describe("unprogramPause", () => {
       if (!/already/i.test(msg)) throw e;
     }
 
-    // pause program
+    // emergency pause
     try {
       await program.methods
-        .programPause()
+        .emergencyPause()
         .accounts({
           signer: admin.publicKey,
           config: configPda,
@@ -74,7 +74,7 @@ describe("unprogramPause", () => {
   it("happy path", async () => {
     try {
       await program.methods
-        .unprogramPause()
+        .emergencyUnpause()
         .accounts({
           signer: admin.publicKey,
           config: configPda,
@@ -89,10 +89,10 @@ describe("unprogramPause", () => {
     expect(cfg.status).to.deep.equal({ active: {} });
   });
 
-  it("fails if already active", async () => {
+  it("fails if not emergency paused", async () => {
     try {
       await program.methods
-        .unprogramPause()
+        .emergencyUnpause()
         .accounts({
           signer: admin.publicKey,
           config: configPda,
@@ -104,7 +104,7 @@ describe("unprogramPause", () => {
     } catch (e: any) {
       const parsed = (anchor as any).AnchorError?.parse?.(e?.logs);
       if (parsed) {
-        expect(parsed.error.errorCode.code).to.eq("AlreadyActive");
+        expect(parsed.error.errorCode.code).to.eq("NotEmergencyPaused");
       }
     }
   });

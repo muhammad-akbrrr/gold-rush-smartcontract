@@ -1,4 +1,4 @@
-use crate::{constants::*, error::GoldRushError, state::*};
+use crate::{constants::*, error::GoldRushError, events::*, state::*};
 use anchor_lang::prelude::*;
 
 #[derive(Accounts)]
@@ -38,6 +38,12 @@ pub fn handler(ctx: Context<EmergencyUnpause>) -> Result<()> {
 
     // set fields
     config.status = ProgramStatus::Active;
+
+    // emit event
+    emit!(EmergencyUnpaused {
+        admin: ctx.accounts.signer.key(),
+        config: config.key(),
+    });
 
     Ok(())
 }
