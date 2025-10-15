@@ -973,9 +973,8 @@ _None_
 1. Check that `admin.key() == config.admin`
 2. Set `config.status = Active`
 
-#### Emits / Side Effects
-- Updates `Config.status` to `Active`
-- Resumes normal operations
+#### Events
+- ProgramUnpaused — program unpaused successfully; Data: admin (Pubkey), config (Pubkey)
 
 #### Errors
 | Code             | Meaning                                             |
