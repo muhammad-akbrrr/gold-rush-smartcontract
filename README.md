@@ -195,7 +195,7 @@ stateDiagram-v2
     NoConfig --> Configured: Initialize Config<br/>initialize_config()
     Configured --> Configured: Update Config<br/>update_config()
 
-    Configured --> Paused: Pause Program<br/>pause()
+    Configured --> Paused: Program Pause<br/>pause()
     Paused --> Configured: Unpause Program<br/>unpause()
 
     Configured --> EmergencyPaused: Emergency Pause<br/>emergency_pause()
@@ -913,7 +913,7 @@ _None_
 
 ---
 
-### Admin: Pause Program
+### Admin: Program Pause
 
 #### Purpose
 Allows the admin to **pause** the entire program by updating the `Config.status` field.  
@@ -1005,8 +1005,8 @@ _None_
 #### Logic
 1. Set `config.status = EmergencyPaused`.
 
-#### Emits / Side Effects
-- The program enters emergency mode. User operations like creating rounds or placing bets are halted. Behavior for claims can remain allowed.
+#### Events
+- EmergencyPaused — emergency paused program successfully; Data: admin (Pubkey), config (Pubkey)
 
 #### Errors
 | Code             | Meaning                                            |

@@ -80,11 +80,11 @@ pub mod gold_rush {
         )
     }
 
-    pub fn pause_program(ctx: Context<PauseProgram>) -> Result<()> {
-        pause_program::handler(ctx)
+    pub fn program_pause(ctx: Context<ProgramPause>) -> Result<()> {
+        program_pause::handler(ctx)
     }
 
-    pub fn unpause_program(ctx: Context<UnpauseProgram>) -> Result<()> {
+    pub fn unpause_program(ctx: Context<UnprogramPause>) -> Result<()> {
         unpause_program::handler(ctx)
     }
 

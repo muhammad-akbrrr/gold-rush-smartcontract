@@ -2,7 +2,7 @@ use crate::{constants::*, error::GoldRushError, events::*, state::*};
 use anchor_lang::prelude::*;
 
 #[derive(Accounts)]
-pub struct UnpauseProgram<'info> {
+pub struct UnprogramPause<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
 
@@ -14,7 +14,7 @@ pub struct UnpauseProgram<'info> {
     pub config: Account<'info, Config>,
 }
 
-impl<'info> UnpauseProgram<'info> {
+impl<'info> UnprogramPause<'info> {
     pub fn validate(&self) -> Result<()> {
         require!(
             self.config.status == ProgramStatus::Paused,
@@ -30,7 +30,7 @@ impl<'info> UnpauseProgram<'info> {
     }
 }
 
-pub fn handler(ctx: Context<UnpauseProgram>) -> Result<()> {
+pub fn handler(ctx: Context<UnprogramPause>) -> Result<()> {
     // validate
     ctx.accounts.validate()?;
 

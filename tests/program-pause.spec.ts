@@ -7,7 +7,7 @@ import { deriveConfigPda } from "./helpers/pda";
 import { hex32ToBytes } from "./helpers/bytes";
 import { GOLD_PRICE_FEED_ID } from "./helpers/pyth";
 
-describe("pauseProgram", () => {
+describe("programPause", () => {
   const { provider, program } = getProviderAndProgram();
 
   let admin: Keypair;
@@ -60,7 +60,7 @@ describe("pauseProgram", () => {
   it("happy path", async () => {
     try {
       await program.methods
-        .pauseProgram()
+        .programPause()
         .accounts({
           signer: admin.publicKey,
           config: configPda,
@@ -78,7 +78,7 @@ describe("pauseProgram", () => {
   it("fails if already paused", async () => {
     try {
       await program.methods
-        .pauseProgram()
+        .programPause()
         .accounts({
           signer: admin.publicKey,
           config: configPda,
