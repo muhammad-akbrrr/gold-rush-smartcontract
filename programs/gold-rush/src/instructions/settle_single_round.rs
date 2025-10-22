@@ -85,10 +85,6 @@ impl<'info> SettleSingleRound<'info> {
             Clock::get()?.unix_timestamp >= self.round.end_time,
             GoldRushError::RoundNotReadyForSettlement
         );
-        require!(
-            self.round.settled_bets < self.round.total_bets,
-            GoldRushError::AllBetsAlreadySettled
-        );
 
         require!(
             self.round.start_price.is_some(),

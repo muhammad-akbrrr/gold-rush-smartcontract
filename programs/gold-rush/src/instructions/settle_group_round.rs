@@ -80,15 +80,6 @@ impl<'info> SettleGroupRound<'info> {
             Clock::get()?.unix_timestamp >= self.round.end_time,
             GoldRushError::RoundNotReadyForSettlement
         );
-        require!(
-            self.round.settled_bets < self.round.total_bets,
-            GoldRushError::AllBetsAlreadySettled
-        );
-
-        require!(
-            !self.round.winner_group_ids.is_empty(),
-            GoldRushError::SettlementFailed
-        );
 
         Ok(())
     }

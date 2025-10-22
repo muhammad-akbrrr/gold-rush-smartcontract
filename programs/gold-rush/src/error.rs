@@ -148,8 +148,8 @@ pub enum GoldRushError {
     #[msg("Error retrieving price from oracle")]
     OracleError = 0x5000,
 
-    #[msg("Settlement process failed")]
-    SettlementFailed = 0x5001,
+    #[msg("Winner group ids already set")]
+    WinnerGroupIdsAlreadySet = 0x5001,
 
     #[msg("Vault has insufficient balance for this operation")]
     InsufficientVaultBalance = 0x5002,
@@ -207,9 +207,6 @@ pub enum GoldRushError {
 
     #[msg("Max winner group ids exceeded")]
     MaxWinnerGroupIdsExceeded = 0x5020,
-
-    #[msg("All bets have already been settled")]
-    AllBetsAlreadySettled = 0x5021,
 
     // Account & Token Errors (0x6000 - 0x6999)
     #[msg("Invalid token account")]

@@ -59,7 +59,7 @@ impl<'info> FinalizeEndGroups<'info> {
         // Only allow finalize once
         require!(
             self.round.winner_group_ids.is_empty(),
-            GoldRushError::SettlementFailed
+            GoldRushError::WinnerGroupIdsAlreadySet
         );
 
         Ok(())
